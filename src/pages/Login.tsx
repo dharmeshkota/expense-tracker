@@ -26,21 +26,15 @@ export default function Login() {
     return () => window.removeEventListener('message', handleMessage);
   }, [setUser]);
 
-  const handleLogin = async () => {
+  const handleLogin = () => {
     try {
-      const response = await fetch('/api/auth/google/url');
-      if (!response.ok) {
-        throw new Error('Failed to get auth URL');
-      }
-      const { url } = await response.json();
-
       const width = 600;
       const height = 700;
       const left = window.screenX + (window.innerWidth - width) / 2;
       const top = window.screenY + (window.innerHeight - height) / 2;
       
       window.open(
-        url,
+        '/api/auth/google',
         'google_login',
         `width=${width},height=${height},left=${left},top=${top}`
       );

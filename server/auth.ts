@@ -11,7 +11,7 @@ export function setupAuth(app: Express) {
   passport.use(new GoogleStrategy({
     clientID: process.env.AUTH_GOOGLE_ID!,
     clientSecret: process.env.AUTH_GOOGLE_SECRET!,
-    callbackURL: `${process.env.APP_URL || 'http://localhost:3000'}/auth/google/callback`,
+    callbackURL: `${process.env.APP_URL || 'http://localhost:3000'}/api/auth/google/callback`,
   }, async (accessToken, refreshToken, profile, done) => {
     try {
       const user = await prisma.user.upsert({
@@ -46,7 +46,7 @@ export function setupAuth(app: Express) {
   });
 
   app.get('/api/auth/google/url', (req, res) => {
-    const redirectUri = `${process.env.APP_URL || 'http://localhost:3000'}/auth/google/callback`;
+    const redirectUri = `${process.env.APP_URL || 'http://localhost:3000'}/api/auth/google/callback`;
     const params = new URLSearchParams({
       client_id: process.env.AUTH_GOOGLE_ID!,
       redirect_uri: redirectUri,
@@ -59,9 +59,9 @@ export function setupAuth(app: Express) {
     res.json({ url: authUrl });
   });
 
-  app.get('/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+  app.get('/api/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
 
-  app.get('/auth/google/callback', 
+  app.get('/api/auth/google/callback', 
     passport.authenticate('google', { failureRedirect: '/login' }),
     (req, res) => {
       res.send(`
