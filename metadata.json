@@ -1,0 +1,5 @@
+{
+  "name": "ExpensePro",
+  "description": "A highly responsive, elegant, and interactive personal expense management PWA with insights and PDF reporting.",
+  "requestFramePermissions": []
+}
