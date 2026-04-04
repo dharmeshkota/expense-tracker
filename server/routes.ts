@@ -1,5 +1,5 @@
 import { Express } from 'express';
-import prisma from './db';
+import prisma from './db.js';
 
 export function setupRoutes(app: Express) {
   // Middleware to check if user is authenticated
@@ -29,6 +29,21 @@ export function setupRoutes(app: Express) {
       },
     });
     res.json(expense);
+  });
+
+  app.delete('/api/expenses/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const result = await prisma.expense.deleteMany({
+        where: { id: req.params.id, userId: req.user.id },
+      });
+      if (result.count === 0) {
+        return res.status(404).json({ error: 'Expense not found or unauthorized' });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Delete expense error:', error);
+      res.status(500).json({ error: 'Failed to delete expense' });
+    }
   });
 
   // Recurring Bill Routes
@@ -62,6 +77,21 @@ export function setupRoutes(app: Express) {
       data: { isPaid },
     });
     res.json(bill);
+  });
+
+  app.delete('/api/bills/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const result = await prisma.recurringBill.deleteMany({
+        where: { id: req.params.id, userId: req.user.id },
+      });
+      if (result.count === 0) {
+        return res.status(404).json({ error: 'Bill not found or unauthorized' });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Delete bill error:', error);
+      res.status(500).json({ error: 'Failed to delete bill' });
+    }
   });
 
   // Budget Routes

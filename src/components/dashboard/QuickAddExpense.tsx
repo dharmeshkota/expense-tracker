@@ -67,7 +67,7 @@ export function QuickAddExpense({ isOpen, onClose, onSuccess }: QuickAddExpenseP
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 py-4">
           <div className="space-y-2">
-            <Label htmlFor="amount">Amount ($)</Label>
+            <Label htmlFor="amount">Amount (₹)</Label>
             <Input 
               id="amount" 
               type="number" 

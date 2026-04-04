@@ -4,9 +4,20 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle2, Circle, AlertCircle, Plus } from 'lucide-react';
+import { CheckCircle2, Circle, AlertCircle, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialogue";
 
 export default function Bills() {
   const [bills, setBills] = useState<any[]>([]);
@@ -34,6 +45,24 @@ export default function Bills() {
     if (res.ok) {
       toast.success(currentStatus ? 'Marked as unpaid' : 'Bill paid!');
       fetchBills();
+    }
+  };
+
+  const deleteBill = async (id: string) => {
+    try {
+      const res = await fetch(`/api/bills/${id}`, {
+        method: 'DELETE',
+      });
+
+      if (res.ok) {
+        toast.success('Bill deleted successfully');
+        fetchBills();
+      } else {
+        const data = await res.json();
+        toast.error(data.error || 'Failed to delete bill');
+      }
+    } catch (error) {
+      toast.error('An error occurred while deleting the bill');
     }
   };
 
@@ -86,7 +115,7 @@ export default function Bills() {
                 <Input id="name" name="name" placeholder="Rent, Electricity, etc." required />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="amount">Monthly Amount ($)</Label>
+                <Label htmlFor="amount">Monthly Amount (₹)</Label>
                 <Input id="amount" name="amount" type="number" step="0.01" required />
               </div>
               <div className="space-y-2">
@@ -137,16 +166,45 @@ export default function Bills() {
                       DUE DAY: {bill.dueDate}
                     </Badge>
                     <span className="text-sm text-muted-foreground">
-                      ${bill.amount.toLocaleString()}
+                      ₹{bill.amount.toLocaleString()}
                     </span>
                   </div>
                 </div>
               </div>
-              {!bill.isPaid && bill.dueDate <= today + 3 && (
-                <Badge variant="destructive" className="animate-pulse">
-                  DUE SOON
-                </Badge>
-              )}
+              <div className="flex items-center space-x-2">
+                {!bill.isPaid && bill.dueDate <= today + 3 && (
+                  <Badge variant="destructive" className="animate-pulse">
+                    DUE SOON
+                  </Badge>
+                )}
+                <AlertDialog>
+                  <AlertDialogTrigger 
+                    render={
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="text-muted-foreground hover:text-destructive"
+                      />
+                    }
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This action cannot be undone. This will permanently delete the recurring bill.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={() => deleteBill(bill.id)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                        Delete
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
             </CardContent>
           </Card>
         ))}

@@ -1,13 +1,12 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { Plus, Wallet, TrendingDown, CreditCard, ArrowRight } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { format } from 'date-fns';
 import { QuickAddExpense } from '@/components/dashboard/QuickAddExpense';
-import { motion } from 'framer-motion';
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
 
@@ -54,10 +53,10 @@ export default function Dashboard() {
             <CardTitle className="text-sm font-medium opacity-80">Remaining Salary</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">${stats.remaining.toLocaleString()}</div>
+            <div className="text-3xl font-bold">₹{stats.remaining.toLocaleString()}</div>
             <div className="mt-4 space-y-2">
               <div className="flex justify-between text-xs opacity-80">
-                <span>Spent: ${stats.totalSpent.toLocaleString()}</span>
+                <span>Spent: ₹{stats.totalSpent.toLocaleString()}</span>
                 <span>{Math.round(spentPercentage)}%</span>
               </div>
               <Progress value={spentPercentage} className="h-2 bg-white/20" />
@@ -71,7 +70,7 @@ export default function Dashboard() {
             <TrendingDown className="h-4 w-4 text-destructive" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${stats.totalSpent.toLocaleString()}</div>
+            <div className="text-2xl font-bold">₹{stats.totalSpent.toLocaleString()}</div>
             <p className="text-xs text-muted-foreground mt-1">This month so far</p>
           </CardContent>
         </Card>
@@ -82,7 +81,7 @@ export default function Dashboard() {
             <CreditCard className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${stats.totalSalary.toLocaleString()}</div>
+            <div className="text-2xl font-bold">₹{stats.totalSalary.toLocaleString()}</div>
             <p className="text-xs text-muted-foreground mt-1">Monthly budget set</p>
           </CardContent>
         </Card>
@@ -122,9 +121,11 @@ export default function Dashboard() {
         <Card className="md:col-span-1 lg:col-span-4">
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Recent Transactions</CardTitle>
-            <Button variant="ghost" size="sm" className="gap-1">
-              View All <ArrowRight className="h-4 w-4" />
-            </Button>
+            <Link to="/transactions">
+              <Button variant="ghost" size="sm" className="gap-1">
+                View All <ArrowRight className="h-4 w-4" />
+              </Button>
+            </Link>
           </CardHeader>
           <CardContent>
             <Table>
@@ -145,7 +146,7 @@ export default function Dashboard() {
                     </TableCell>
                     <TableCell className="max-w-[150px] truncate">{expense.description || '-'}</TableCell>
                     <TableCell className="text-right font-medium">
-                      ${expense.amount.toLocaleString()}
+                      ₹{expense.amount.toLocaleString()}
                     </TableCell>
                   </TableRow>
                 ))}

@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard';
 import Insights from './pages/Insights';
 import Bills from './pages/Bills';
 import Settings from './pages/Settings';
+import Transactions from './pages/Transactions';
 import Login from './pages/Login';
 
 function App() {
@@ -26,7 +27,18 @@ function App() {
         setIsLoading(false);
       }
     };
+
     checkAuth();
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
+        checkAuth();
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+
+    return () => window.removeEventListener('message', handleMessage);
   }, [setUser, setIsLoading]);
 
   if (isLoading) {
@@ -62,6 +74,7 @@ function App() {
               <Route path="/insights" element={<Insights />} />
               <Route path="/bills" element={<Bills />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/transactions" element={<Transactions />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </div>

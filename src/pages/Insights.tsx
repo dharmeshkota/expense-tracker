@@ -61,9 +61,9 @@ export default function Insights() {
       startY: 55,
       head: [['Metric', 'Amount']],
       body: [
-        ['Total Salary', `$${data.totalSalary.toLocaleString()}`],
-        ['Total Spent', `$${data.totalSpent.toLocaleString()}`],
-        ['Remaining', `$${data.remaining.toLocaleString()}`],
+        ['Total Salary', `₹${data.totalSalary.toLocaleString()}`],
+        ['Total Spent', `₹${data.totalSpent.toLocaleString()}`],
+        ['Remaining', `₹${data.remaining.toLocaleString()}`],
         ['Savings Rate', `${Math.round((data.remaining / data.totalSalary) * 100)}%`],
       ],
       theme: 'striped',
@@ -78,7 +78,7 @@ export default function Insights() {
       head: [['Category', 'Amount', 'Percentage']],
       body: data.categoryBreakdown.map((c: any) => [
         c.name,
-        `$${c.value.toLocaleString()}`,
+        `₹${c.value.toLocaleString()}`,
         `${Math.round((c.value / data.totalSpent) * 100)}%`
       ]),
       theme: 'grid',
@@ -95,7 +95,7 @@ export default function Insights() {
         format(new Date(e.date), 'MMM dd'),
         e.category,
         e.description || '-',
-        `$${e.amount.toLocaleString()}`
+        `₹${e.amount.toLocaleString()}`
       ]),
       theme: 'plain'
     });
@@ -156,21 +156,21 @@ export default function Insights() {
             <div className="flex justify-between items-center p-4 rounded-lg bg-muted/30">
               <div className="space-y-1">
                 <p className="text-sm font-medium text-muted-foreground">Total Salary</p>
-                <p className="text-2xl font-bold">${data.totalSalary.toLocaleString()}</p>
+                <p className="text-2xl font-bold">₹{data.totalSalary.toLocaleString()}</p>
               </div>
               <Wallet className="h-8 w-8 text-primary opacity-20" />
             </div>
             <div className="flex justify-between items-center p-4 rounded-lg bg-muted/30">
               <div className="space-y-1">
                 <p className="text-sm font-medium text-muted-foreground">Total Spent</p>
-                <p className="text-2xl font-bold text-destructive">${data.totalSpent.toLocaleString()}</p>
+                <p className="text-2xl font-bold text-destructive">₹{data.totalSpent.toLocaleString()}</p>
               </div>
               <TrendingDown className="h-8 w-8 text-destructive opacity-20" />
             </div>
             <div className="flex justify-between items-center p-4 rounded-lg bg-primary/10">
               <div className="space-y-1">
                 <p className="text-sm font-medium text-primary">Remaining</p>
-                <p className="text-2xl font-bold text-primary">${data.remaining.toLocaleString()}</p>
+                <p className="text-2xl font-bold text-primary">₹{data.remaining.toLocaleString()}</p>
               </div>
               <CreditCard className="h-8 w-8 text-primary opacity-20" />
             </div>

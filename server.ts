@@ -7,8 +7,8 @@ import session from 'express-session';
 import passport from 'passport';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
-import { setupAuth } from './server/auth';
-import { setupRoutes } from './server/routes';
+import { setupAuth } from './server/auth.js';
+import { setupRoutes } from './server/routes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,7 +26,7 @@ async function startServer() {
     saveUninitialized: false,
     cookie: {
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'none',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       httpOnly: true,
     }
   }));
