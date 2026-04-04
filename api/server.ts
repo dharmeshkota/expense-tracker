@@ -7,8 +7,8 @@ import session from 'express-session';
 import passport from 'passport';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
-import { setupAuth } from './server/auth.js';
-import { setupRoutes } from './server/routes.js';
+import { setupAuth } from '../server/auth.js';
+import { setupRoutes } from '../server/routes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
