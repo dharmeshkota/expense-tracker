@@ -9,6 +9,12 @@ export default function Login() {
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
+      // Validate origin matches current site or local dev
+      const origin = event.origin;
+      if (!origin.endsWith('.vercel.app') && !origin.includes('localhost') && !origin.endsWith('.run.app')) {
+        return;
+      }
+      
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
         fetch('/api/auth/me')
           .then(res => res.json())
@@ -20,17 +26,27 @@ export default function Login() {
     return () => window.removeEventListener('message', handleMessage);
   }, [setUser]);
 
-  const handleLogin = () => {
-    const width = 600;
-    const height = 700;
-    const left = window.screenX + (window.innerWidth - width) / 2;
-    const top = window.screenY + (window.innerHeight - height) / 2;
-    
-    window.open(
-      '/auth/google',
-      'google_login',
-      `width=${width},height=${height},left=${left},top=${top}`
-    );
+  const handleLogin = async () => {
+    try {
+      const response = await fetch('/api/auth/google/url');
+      if (!response.ok) {
+        throw new Error('Failed to get auth URL');
+      }
+      const { url } = await response.json();
+
+      const width = 600;
+      const height = 700;
+      const left = window.screenX + (window.innerWidth - width) / 2;
+      const top = window.screenY + (window.innerHeight - height) / 2;
+      
+      window.open(
+        url,
+        'google_login',
+        `width=${width},height=${height},left=${left},top=${top}`
+      );
+    } catch (error) {
+      console.error('Login error:', error);
+    }
   };
 
   return (

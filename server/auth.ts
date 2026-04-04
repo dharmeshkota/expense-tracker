@@ -1,13 +1,17 @@
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { Express } from 'express';
-import prisma from './db';
+import prisma from './db.js';
 
 export function setupAuth(app: Express) {
+  if (!process.env.APP_URL) {
+    console.warn('APP_URL environment variable is not set. OAuth redirects may fail.');
+  }
+
   passport.use(new GoogleStrategy({
     clientID: process.env.AUTH_GOOGLE_ID!,
     clientSecret: process.env.AUTH_GOOGLE_SECRET!,
-    callbackURL: `${process.env.APP_URL}/auth/google/callback`,
+    callbackURL: `${process.env.APP_URL || 'http://localhost:3000'}/auth/google/callback`,
   }, async (accessToken, refreshToken, profile, done) => {
     try {
       const user = await prisma.user.upsert({
@@ -39,6 +43,20 @@ export function setupAuth(app: Express) {
     } catch (error) {
       done(error);
     }
+  });
+
+  app.get('/api/auth/google/url', (req, res) => {
+    const redirectUri = `${process.env.APP_URL || 'http://localhost:3000'}/auth/google/callback`;
+    const params = new URLSearchParams({
+      client_id: process.env.AUTH_GOOGLE_ID!,
+      redirect_uri: redirectUri,
+      response_type: 'code',
+      scope: 'profile email',
+      access_type: 'offline',
+      prompt: 'consent',
+    });
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+    res.json({ url: authUrl });
   });
 
   app.get('/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
