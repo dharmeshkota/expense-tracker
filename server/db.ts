@@ -1,17 +1,16 @@
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
+import pg from 'pg';
 
-if (!process.env.DATABASE_URL) {
-  throw new Error('DATABASE_URL environment variable is missing');
+const databaseUrl = process.env.DATABASE_URL;
+
+if (!databaseUrl) {
+  console.error('CRITICAL: DATABASE_URL environment variable is missing. Database operations will fail.');
 }
 
-// 1. Initialize the Postgres adapter with your connection string
-const adapter = new PrismaPg({
-  connectionString: process.env.DATABASE_URL,
-});
-
-// 2. Pass the adapter to the Prisma client
-const prisma = new PrismaClient({ adapter });
+const pool = databaseUrl ? new pg.Pool({ connectionString: databaseUrl }) : null;
+const adapter = pool ? new PrismaPg(pool) : null;
+const prisma = new PrismaClient(adapter ? { adapter } : undefined);
 
 export default prisma;

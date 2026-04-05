@@ -7,22 +7,18 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
+import { useStore } from '@/store/useStore';
 
 const expenseSchema = z.object({
   amount: z.string().refine((val) => !isNaN(parseFloat(val)) && parseFloat(val) > 0, {
     message: "Amount must be a positive number",
   }),
   category: z.string().min(1, "Category is required"),
-  description: z.string().optional(),
+  description: z.string().min(1, "Description is required"),
   date: z.string().min(1, "Date is required"),
 });
 
 type ExpenseFormValues = z.infer<typeof expenseSchema>;
-
-const categories = [
-  'Rent', 'Electricity', 'Transportation', 'Outings', 'Groceries', 
-  'Family', 'Shopping', 'Travel', 'Custom'
-];
 
 interface QuickAddExpenseProps {
   isOpen: boolean;
@@ -31,6 +27,7 @@ interface QuickAddExpenseProps {
 }
 
 export function QuickAddExpense({ isOpen, onClose, onSuccess }: QuickAddExpenseProps) {
+  const { categories, addExpense } = useStore();
   const { register, handleSubmit, formState: { errors, isSubmitting }, reset, setValue } = useForm<ExpenseFormValues>({
     resolver: zodResolver(expenseSchema),
     defaultValues: {
@@ -47,6 +44,8 @@ export function QuickAddExpense({ isOpen, onClose, onSuccess }: QuickAddExpenseP
       });
 
       if (res.ok) {
+        const newExpense = await res.json();
+        addExpense(newExpense);
         toast.success('Expense added successfully!');
         reset();
         onSuccess();
@@ -61,52 +60,69 @@ export function QuickAddExpense({ isOpen, onClose, onSuccess }: QuickAddExpenseP
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[425px] rounded-2xl">
         <DialogHeader>
-          <DialogTitle>Add New Expense</DialogTitle>
+          <DialogTitle className="text-xl font-bold">Add New Expense</DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 py-4">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-5 py-4">
           <div className="space-y-2">
-            <Label htmlFor="amount">Amount (₹)</Label>
+            <Label htmlFor="amount" className="text-sm font-semibold">Amount ($)</Label>
             <Input 
               id="amount" 
               type="number" 
               step="0.01" 
               placeholder="0.00" 
+              className="rounded-xl bg-muted/50 border-none h-11"
               {...register('amount')} 
             />
-            {errors.amount && <p className="text-xs text-destructive">{errors.amount.message}</p>}
+            {errors.amount && <p className="text-xs text-destructive font-medium">{errors.amount.message}</p>}
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="category">Category</Label>
-            <Select onValueChange={(val) => setValue('category', val as any)}>
-              <SelectTrigger>
+            <Label htmlFor="category" className="text-sm font-semibold">Category</Label>
+            <Select onValueChange={(val: string) => setValue('category', val)}>
+              <SelectTrigger className="rounded-xl bg-muted/50 border-none h-11">
                 <SelectValue placeholder="Select category" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="rounded-xl">
                 {categories.map((cat) => (
-                  <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                  <SelectItem key={cat.id} value={cat.name}>
+                    <div className="flex items-center gap-2">
+                      <div className="h-2 w-2 rounded-full" style={{ backgroundColor: cat.color }} />
+                      <span>{cat.name}</span>
+                    </div>
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {errors.category && <p className="text-xs text-destructive">{errors.category.message}</p>}
+            {errors.category && <p className="text-xs text-destructive font-medium">{errors.category.message}</p>}
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="description">Description (Optional)</Label>
-            <Input id="description" placeholder="Lunch, Uber, etc." {...register('description')} />
+            <Label htmlFor="description" className="text-sm font-semibold">Description</Label>
+            <Input 
+              id="description" 
+              placeholder="What did you spend on?" 
+              className="rounded-xl bg-muted/50 border-none h-11"
+              {...register('description')} 
+            />
+            {errors.description && <p className="text-xs text-destructive font-medium">{errors.description.message}</p>}
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="date">Date</Label>
-            <Input id="date" type="date" {...register('date')} />
-            {errors.date && <p className="text-xs text-destructive">{errors.date.message}</p>}
+            <Label htmlFor="date" className="text-sm font-semibold">Date</Label>
+            <Input 
+              id="date" 
+              type="date" 
+              className="rounded-xl bg-muted/50 border-none h-11"
+              {...register('date')} 
+            />
+            {errors.date && <p className="text-xs text-destructive font-medium">{errors.date.message}</p>}
           </div>
 
-          <DialogFooter className="pt-4">
-            <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={isSubmitting}>
+          <DialogFooter className="pt-4 gap-3">
+            <Button type="button" variant="ghost" onClick={onClose} className="rounded-xl">Cancel</Button>
+            <Button type="submit" disabled={isSubmitting} className="rounded-xl px-8 shadow-lg shadow-primary/20">
               {isSubmitting ? 'Adding...' : 'Add Expense'}
             </Button>
           </DialogFooter>

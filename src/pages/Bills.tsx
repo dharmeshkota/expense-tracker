@@ -1,33 +1,51 @@
 import { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle2, Circle, AlertCircle, Plus, Trash2 } from 'lucide-react';
+import { CheckCircle2, Circle, AlertCircle, Plus, Trash2, Receipt, Calendar as CalendarIcon } from 'lucide-react';
 import { toast } from 'sonner';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialogue";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { useStore } from '@/store/useStore';
+import { cn } from '@/lib/utils';
+import { format } from 'date-fns';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
+
+const billSchema = z.object({
+  name: z.string().min(1, "Bill name is required"),
+  amount: z.string().refine((val) => !isNaN(parseFloat(val)) && parseFloat(val) > 0, {
+    message: "Amount must be a positive number",
+  }),
+  dueDate: z.string().refine((val) => {
+    const num = parseInt(val);
+    return !isNaN(num) && num >= 1 && num <= 31;
+  }, {
+    message: "Due date must be between 1 and 31",
+  }),
+});
+
+type BillFormValues = z.infer<typeof billSchema>;
 
 export default function Bills() {
-  const [bills, setBills] = useState<any[]>([]);
+  const { bills, setBills, addBill, toggleBillPaid } = useStore();
   const [isAddOpen, setIsAddOpen] = useState(false);
 
+  const { register, handleSubmit, formState: { errors, isSubmitting }, reset } = useForm<BillFormValues>({
+    resolver: zodResolver(billSchema),
+  });
+
   const fetchBills = async () => {
-    const res = await fetch('/api/bills');
-    if (res.ok) {
-      const data = await res.json();
-      setBills(data);
+    try {
+      const res = await fetch('/api/bills');
+      if (res.ok) {
+        const data = await res.json();
+        setBills(data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch bills:', error);
     }
   };
 
@@ -35,185 +53,213 @@ export default function Bills() {
     fetchBills();
   }, []);
 
-  const togglePaid = async (id: string, currentStatus: boolean) => {
-    const res = await fetch(`/api/bills/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ isPaid: !currentStatus }),
-    });
+  const handleTogglePaid = async (id: string, currentStatus: boolean) => {
+    try {
+      const res = await fetch(`/api/bills/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isPaid: !currentStatus }),
+      });
 
-    if (res.ok) {
-      toast.success(currentStatus ? 'Marked as unpaid' : 'Bill paid!');
-      fetchBills();
+      if (res.ok) {
+        toggleBillPaid(id);
+        toast.success(currentStatus ? 'Marked as unpaid' : 'Bill paid!');
+      }
+    } catch (error) {
+      toast.error('Failed to update bill');
     }
   };
 
   const deleteBill = async (id: string) => {
     try {
-      const res = await fetch(`/api/bills/${id}`, {
-        method: 'DELETE',
-      });
-
+      const res = await fetch(`/api/bills/${id}`, { method: 'DELETE' });
       if (res.ok) {
-        toast.success('Bill deleted successfully');
-        fetchBills();
-      } else {
-        const data = await res.json();
-        toast.error(data.error || 'Failed to delete bill');
+        setBills(bills.filter(b => b.id !== id));
+        toast.success('Bill deleted');
       }
     } catch (error) {
-      toast.error('An error occurred while deleting the bill');
+      toast.error('Failed to delete bill');
     }
   };
 
-  const handleAddBill = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
+  const onSubmit = async (values: BillFormValues) => {
     const data = {
-      name: formData.get('name'),
-      amount: formData.get('amount'),
-      dueDate: formData.get('dueDate'),
+      name: values.name,
+      amount: parseFloat(values.amount),
+      dueDate: parseInt(values.dueDate),
       month: new Date().getMonth() + 1,
       year: new Date().getFullYear(),
+      isPaid: false
     };
 
-    const res = await fetch('/api/bills', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
+    try {
+      const res = await fetch('/api/bills', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
 
-    if (res.ok) {
-      toast.success('Bill added successfully');
-      setIsAddOpen(false);
-      fetchBills();
+      if (res.ok) {
+        const newBill = await res.json();
+        addBill(newBill);
+        toast.success('Bill added successfully');
+        reset();
+        setIsAddOpen(false);
+      }
+    } catch (error) {
+      toast.error('Failed to add bill');
     }
   };
 
   const today = new Date().getDate();
-  const unpaidUpcoming = bills.filter(b => !b.isPaid && b.dueDate >= 1 && b.dueDate <= 5);
+  const unpaidUpcoming = bills.filter(b => !b.isPaid && b.dueDate >= today && b.dueDate <= today + 5);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      <header className="flex items-center justify-between">
+      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Recurring Bills</h1>
-          <p className="text-muted-foreground">Manage your monthly commitments.</p>
+          <p className="text-muted-foreground mt-1">Manage your monthly commitments and subscriptions.</p>
         </div>
-        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-          <Button onClick={() => setIsAddOpen(true)} className="rounded-full h-12 px-6 gap-2 shadow-lg">
-            <Plus className="h-5 w-5" />
-            Add Bill
-          </Button>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add Recurring Bill</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleAddBill} className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">Bill Name</Label>
-                <Input id="name" name="name" placeholder="Rent, Electricity, etc." required />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="amount">Monthly Amount (₹)</Label>
-                <Input id="amount" name="amount" type="number" step="0.01" required />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="dueDate">Due Date (Day of Month)</Label>
-                <Input id="dueDate" name="dueDate" type="number" min="1" max="31" required />
-              </div>
-              <Button type="submit" className="w-full">Save Bill</Button>
-            </form>
-          </DialogContent>
-        </Dialog>
+        <Button onClick={() => setIsAddOpen(true)} className="rounded-xl h-10 px-4 gap-2 shadow-lg shadow-primary/20">
+          <Plus className="h-4 w-4" />
+          <span>Add Bill</span>
+        </Button>
       </header>
 
       {unpaidUpcoming.length > 0 && (
-        <Card className="border-destructive bg-destructive/5">
-          <CardHeader className="flex flex-row items-center space-x-2 pb-2">
-            <AlertCircle className="h-5 w-5 text-destructive" />
-            <CardTitle className="text-destructive">Action Required</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm">
-              You have {unpaidUpcoming.length} bill(s) due between the 1st and 5th of the month that are still unpaid.
+        <div className="bg-destructive/10 border border-destructive/20 rounded-2xl p-4 flex items-start space-x-3">
+          <AlertCircle className="h-5 w-5 text-destructive mt-0.5" />
+          <div>
+            <h4 className="text-sm font-bold text-destructive">Action Required</h4>
+            <p className="text-xs text-destructive/80 mt-1">
+              You have {unpaidUpcoming.length} bill(s) due within the next 5 days.
             </p>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
       <div className="grid gap-4">
-        {bills.map((bill) => (
-          <Card key={bill.id} className={bill.isPaid ? 'opacity-60' : ''}>
-            <CardContent className="p-6 flex items-center justify-between">
-              <div className="flex items-center space-x-4">
-                <button 
-                  onClick={() => togglePaid(bill.id, bill.isPaid)}
-                  className="transition-transform hover:scale-110"
-                >
-                  {bill.isPaid ? (
-                    <CheckCircle2 className="h-8 w-8 text-primary" />
-                  ) : (
-                    <Circle className="h-8 w-8 text-muted-foreground" />
-                  )}
-                </button>
-                <div>
-                  <h3 className={bill.isPaid ? 'line-through font-medium' : 'font-bold text-lg'}>
-                    {bill.name}
-                  </h3>
-                  <div className="flex items-center space-x-2 mt-1">
-                    <Badge variant="outline" className="text-[10px]">
-                      DUE DAY: {bill.dueDate}
-                    </Badge>
-                    <span className="text-sm text-muted-foreground">
-                      ₹{bill.amount.toLocaleString()}
-                    </span>
+        {bills.length > 0 ? (
+          bills.map((bill) => (
+            <Card key={bill.id} className={cn(
+              "border-none shadow-sm transition-all duration-200 rounded-2xl overflow-hidden",
+              bill.isPaid ? "bg-muted/30 opacity-60" : "bg-card hover:shadow-md"
+            )}>
+              <CardContent className="p-6 flex items-center justify-between">
+                <div className="flex items-center space-x-4">
+                  <button 
+                    onClick={() => handleTogglePaid(bill.id, bill.isPaid)}
+                    className="transition-transform hover:scale-110 focus:outline-none"
+                  >
+                    {bill.isPaid ? (
+                      <CheckCircle2 className="h-8 w-8 text-primary fill-primary/10" />
+                    ) : (
+                      <Circle className="h-8 w-8 text-muted-foreground" />
+                    )}
+                  </button>
+                  <div>
+                    <h3 className={cn(
+                      "font-bold text-lg",
+                      bill.isPaid && "line-through text-muted-foreground"
+                    )}>
+                      {bill.name}
+                    </h3>
+                    <div className="flex items-center space-x-3 mt-1">
+                      <div className="flex items-center text-xs font-medium text-muted-foreground bg-muted px-2 py-1 rounded-lg">
+                        <CalendarIcon className="h-3 w-3 mr-1" />
+                        Due on {bill.dueDate}{bill.dueDate === 1 ? 'st' : bill.dueDate === 2 ? 'nd' : bill.dueDate === 3 ? 'rd' : 'th'}
+                      </div>
+                      <span className="text-sm font-bold text-foreground">
+                        ${bill.amount.toLocaleString()}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div className="flex items-center space-x-2">
-                {!bill.isPaid && bill.dueDate <= today + 3 && (
-                  <Badge variant="destructive" className="animate-pulse">
-                    DUE SOON
-                  </Badge>
-                )}
-                <AlertDialog>
-                  <AlertDialogTrigger 
-                    render={
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="text-muted-foreground hover:text-destructive"
-                      />
-                    }
+                <div className="flex items-center space-x-3">
+                  {!bill.isPaid && bill.dueDate <= today + 3 && (
+                    <Badge variant="destructive" className="rounded-lg px-2 py-1 text-[10px] font-bold animate-pulse">
+                      DUE SOON
+                    </Badge>
+                  )}
+                  <button 
+                    onClick={() => deleteBill(bill.id)}
+                    className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl transition-colors"
                   >
                     <Trash2 className="h-4 w-4" />
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        This action cannot be undone. This will permanently delete the recurring bill.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction onClick={() => deleteBill(bill.id)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                        Delete
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-        {bills.length === 0 && (
-          <div className="text-center py-12 text-muted-foreground">
-            No recurring bills added yet.
+                  </button>
+                </div>
+              </CardContent>
+            </Card>
+          ))
+        ) : (
+          <div className="bg-card border border-dashed rounded-2xl py-16 text-center">
+            <div className="h-12 w-12 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
+              <Receipt className="h-6 w-6 text-muted-foreground" />
+            </div>
+            <h3 className="text-lg font-bold">No recurring bills</h3>
+            <p className="text-sm text-muted-foreground mt-1">Add your first bill to start tracking.</p>
+            <Button 
+              variant="outline" 
+              onClick={() => setIsAddOpen(true)}
+              className="mt-6 rounded-xl"
+            >
+              Add Bill
+            </Button>
           </div>
         )}
       </div>
+
+      <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+        <DialogContent className="sm:max-w-[425px] rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold">Add Recurring Bill</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-5 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="name" className="text-sm font-semibold">Bill Name</Label>
+              <Input 
+                id="name" 
+                placeholder="Rent, Netflix, Gym, etc." 
+                className="rounded-xl bg-muted/50 border-none h-11"
+                {...register('name')} 
+              />
+              {errors.name && <p className="text-xs text-destructive font-medium">{errors.name.message}</p>}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="amount" className="text-sm font-semibold">Monthly Amount ($)</Label>
+              <Input 
+                id="amount" 
+                type="number" 
+                step="0.01" 
+                placeholder="0.00"
+                className="rounded-xl bg-muted/50 border-none h-11"
+                {...register('amount')} 
+              />
+              {errors.amount && <p className="text-xs text-destructive font-medium">{errors.amount.message}</p>}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="dueDate" className="text-sm font-semibold">Due Date (Day of Month)</Label>
+              <Input 
+                id="dueDate" 
+                type="number" 
+                min="1" 
+                max="31" 
+                placeholder="15"
+                className="rounded-xl bg-muted/50 border-none h-11"
+                {...register('dueDate')} 
+              />
+              {errors.dueDate && <p className="text-xs text-destructive font-medium">{errors.dueDate.message}</p>}
+            </div>
+            <DialogFooter className="pt-4 gap-3">
+              <Button type="button" variant="ghost" onClick={() => setIsAddOpen(false)} className="rounded-xl">Cancel</Button>
+              <Button type="submit" disabled={isSubmitting} className="rounded-xl px-8 shadow-lg shadow-primary/20">
+                {isSubmitting ? 'Saving...' : 'Save Bill'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

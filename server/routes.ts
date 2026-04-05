@@ -33,12 +33,25 @@ export function setupRoutes(app: Express) {
 
   app.delete('/api/expenses/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const result = await prisma.expense.deleteMany({
-        where: { id: req.params.id, userId: req.user.id },
+      const expenseId = req.params.id;
+      const userId = req.user.id;
+
+      const expense = await prisma.expense.findUnique({
+        where: { id: expenseId }
       });
-      if (result.count === 0) {
-        return res.status(404).json({ error: 'Expense not found or unauthorized' });
+
+      if (!expense) {
+        return res.status(404).json({ error: 'Expense not found' });
       }
+
+      if (expense.userId !== userId) {
+        return res.status(403).json({ error: 'Unauthorized to delete this expense' });
+      }
+
+      await prisma.expense.delete({
+        where: { id: expenseId }
+      });
+
       res.json({ success: true });
     } catch (error) {
       console.error('Delete expense error:', error);
@@ -81,12 +94,25 @@ export function setupRoutes(app: Express) {
 
   app.delete('/api/bills/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const result = await prisma.recurringBill.deleteMany({
-        where: { id: req.params.id, userId: req.user.id },
+      const billId = req.params.id;
+      const userId = req.user.id;
+      
+      const bill = await prisma.recurringBill.findUnique({
+        where: { id: billId }
       });
-      if (result.count === 0) {
-        return res.status(404).json({ error: 'Bill not found or unauthorized' });
+
+      if (!bill) {
+        return res.status(404).json({ error: 'Bill not found' });
       }
+
+      if (bill.userId !== userId) {
+        return res.status(403).json({ error: 'Unauthorized to delete this bill' });
+      }
+
+      await prisma.recurringBill.delete({
+        where: { id: billId }
+      });
+
       res.json({ success: true });
     } catch (error) {
       console.error('Delete bill error:', error);
@@ -172,5 +198,21 @@ export function setupRoutes(app: Express) {
       categoryBreakdown: Object.entries(categoryBreakdown).map(([name, value]) => ({ name, value })),
       recentExpenses: expenses.slice(0, 5),
     });
+  });
+
+  // Reset Data Route
+  app.post('/api/reset', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      await prisma.$transaction([
+        prisma.expense.deleteMany({ where: { userId } }),
+        prisma.recurringBill.deleteMany({ where: { userId } }),
+        prisma.budget.deleteMany({ where: { userId } }),
+      ]);
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Reset data error:', error);
+      res.status(500).json({ error: 'Failed to reset data' });
+    }
   });
 }

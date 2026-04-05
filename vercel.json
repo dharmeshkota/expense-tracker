@@ -3,15 +3,20 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "/api/server" 
+      "destination": "/server.ts"
     },
     {
       "source": "/auth/(.*)",
-      "destination": "/api/server"
+      "destination": "/server.ts"
     },
     {
       "source": "/(.*)",
       "destination": "/index.html"
     }
-  ]
+  ],
+  "functions": {
+    "server.ts": {
+      "runtime": "@vercel/node"
+    }
+  }
 }
