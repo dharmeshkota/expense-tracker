@@ -8,6 +8,7 @@ import Bills from './pages/Bills';
 import Settings from './pages/Settings';
 import Transactions from './pages/Transactions';
 import Insights from './pages/Insights';
+import Categories from './pages/Categories';
 import Login from './pages/Login';
 
 function App() {
@@ -68,15 +69,16 @@ function App() {
 
   return (
     <Router>
-      <div className="min-h-screen bg-background font-sans selection:bg-primary/10 selection:text-primary">
+      <div className="flex min-h-screen bg-background font-sans selection:bg-primary/10 selection:text-primary">
         <Sidebar />
-        <main className="md:pl-72 pb-20 md:pb-0 min-h-screen">
-          <div className="max-w-7xl mx-auto p-4 md:p-8 lg:p-12">
+        <main className="flex-1 md:pl-0 pb-20 md:pb-0 min-h-screen">
+          <div className="max-w-7xl mx-auto p-3 md:p-8 lg:p-12">
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/transactions" element={<Transactions />} />
               <Route path="/insights" element={<Insights />} />
               <Route path="/bills" element={<Bills />} />
+              <Route path="/categories" element={<Categories />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

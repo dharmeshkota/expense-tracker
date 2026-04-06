@@ -1,14 +1,16 @@
 import { useState, useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { useStore } from '@/store/useStore';
 import { StatCard } from '@/components/dashboard/StatCard';
-import { Wallet, TrendingUp, Calendar, CreditCard, Plus, ArrowUpRight, ArrowDownRight, Search, Filter } from 'lucide-react';
+import { Wallet, TrendingUp, Calendar, CreditCard, Plus, ArrowUpRight, ArrowDownRight, Search, Filter, LayoutDashboard } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell
 } from 'recharts';
 import { format, startOfMonth, endOfMonth, isWithinInterval, eachDayOfInterval } from 'date-fns';
-import { cn } from '@/lib/utils';
+import { cn, formatCurrency } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { HeartChart } from '@/components/ui/heartChart';
 import { QuickAddExpense } from '@/components/dashboard/QuickAddExpense';
 
 export default function Dashboard() {
@@ -66,7 +68,7 @@ export default function Dashboard() {
   }, [expenses]);
 
   const categoryData = useMemo(() => {
-    return categories.map(cat => {
+    const breakdown = categories.map(cat => {
       const amount = currentMonthExpenses
         .filter(e => e.category === cat.name)
         .reduce((sum, e) => sum + e.amount, 0);
@@ -75,7 +77,23 @@ export default function Dashboard() {
         value: amount,
         color: cat.color
       };
-    }).filter(d => d.value > 0);
+    });
+
+    // Catch expenses with categories not in the current list
+    const knownCategoryNames = categories.map(c => c.name);
+    const otherAmount = currentMonthExpenses
+      .filter(e => !knownCategoryNames.includes(e.category))
+      .reduce((sum, e) => sum + e.amount, 0);
+
+    if (otherAmount > 0) {
+      breakdown.push({
+        name: 'Other',
+        value: otherAmount,
+        color: '#64748b'
+      });
+    }
+
+    return breakdown.filter(d => d.value > 0).sort((a, b) => b.value - a.value);
   }, [currentMonthExpenses, categories]);
 
   const recentExpenses = useMemo(() => 
@@ -84,48 +102,61 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-muted-foreground mt-1">
-            Welcome back! Here's what's happening with your money.
-          </p>
-        </div>
-        <div className="flex items-center space-x-3">
-          <div className="flex items-center space-x-3 bg-card border rounded-xl px-4 py-2 shadow-sm">
-            <Calendar className="h-4 w-4 text-primary" />
-            <span className="text-sm font-medium">{format(new Date(), 'MMMM yyyy')}</span>
+      <div className="relative overflow-hidden rounded-3xl bg-primary/5 p-6 md:p-8 border border-primary/10">
+        <div className="absolute top-0 right-0 -mt-4 -mr-4 h-32 w-32 rounded-full bg-primary/10 blur-3xl" />
+        <div className="absolute bottom-0 left-0 -mb-4 -ml-4 h-24 w-24 rounded-full bg-primary/10 blur-2xl" />
+        
+        <header className="relative flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-primary">
+              <LayoutDashboard className="h-5 w-5" />
+              <span className="text-xs font-black uppercase tracking-widest">Overview</span>
+            </div>
+            <h1 className="text-3xl md:text-4xl font-black tracking-tight text-foreground">Dashboard</h1>
+            <p className="text-sm md:text-base text-muted-foreground max-w-md">
+              Welcome back! Here's a summary of your financial status for this month.
+            </p>
           </div>
-          <Button onClick={() => setIsAddOpen(true)} className="rounded-xl h-10 px-4 gap-2 shadow-lg shadow-primary/20">
-            <Plus className="h-4 w-4" />
-            <span>Add Expense</span>
-          </Button>
-        </div>
-      </header>
+          
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="bg-background/50 backdrop-blur-sm px-4 py-2 rounded-2xl border border-border/50 flex items-center gap-3 shadow-sm">
+              <Calendar className="h-4 w-4 text-primary" />
+              <span className="text-sm font-bold">{format(new Date(), 'MMMM yyyy')}</span>
+            </div>
+            <Button 
+              onClick={() => setIsAddOpen(true)} 
+              className="rounded-xl h-11 px-6 gap-2 shadow-lg shadow-primary/20 font-bold transition-all hover:scale-105 active:scale-95"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Add Expense</span>
+            </Button>
+          </div>
+        </header>
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard 
           title="Total Spent"
-          value={`$${totalSpent.toLocaleString()}`}
+          value={formatCurrency(totalSpent, settings.currency)}
           icon={Wallet}
           variant="danger"
           trend={{ value: '+12.5%', isPositive: false }}
         />
         <StatCard 
           title="Remaining"
-          value={`$${remainingBudget.toLocaleString()}`}
+          value={formatCurrency(remainingBudget, settings.currency)}
           icon={TrendingUp}
           variant="success"
         />
         <StatCard 
           title="Daily Average"
-          value={`$${dailyAverage.toFixed(2)}`}
+          value={formatCurrency(dailyAverage, settings.currency)}
           icon={Calendar}
           variant="primary"
         />
         <StatCard 
           title="Monthly Budget"
-          value={`$${settings.monthlyBudget.toLocaleString()}`}
+          value={formatCurrency(settings.monthlyBudget, settings.currency)}
           icon={CreditCard}
           variant="warning"
         />
@@ -155,15 +186,18 @@ export default function Dashboard() {
                     dataKey="date" 
                     axisLine={false} 
                     tickLine={false} 
-                    tick={{ fontSize: 12, fill: 'var(--color-muted-foreground)' }}
+                    tick={{ fontSize: 10, fill: 'var(--color-muted-foreground)' }}
                     dy={10}
+                    minTickGap={30}
                   />
                   <YAxis 
                     axisLine={false} 
                     tickLine={false} 
                     tick={{ fontSize: 12, fill: 'var(--color-muted-foreground)' }}
+                    tickFormatter={(value) => formatCurrency(value, settings.currency)}
                   />
                   <Tooltip 
+                    formatter={(value: number) => formatCurrency(value, settings.currency)}
                     contentStyle={{ 
                       backgroundColor: 'var(--color-card)', 
                       borderColor: 'var(--color-border)',
@@ -202,8 +236,8 @@ export default function Dashboard() {
                 />
               </div>
               <div className="flex justify-between text-sm">
-                <span className="font-semibold">${totalSpent.toLocaleString()} spent</span>
-                <span className="text-muted-foreground">Budget: ${settings.monthlyBudget.toLocaleString()}</span>
+                <span className="font-semibold">{formatCurrency(totalSpent, settings.currency)} spent</span>
+                <span className="text-muted-foreground">Budget: {formatCurrency(settings.monthlyBudget, settings.currency)}</span>
               </div>
             </div>
           </div>
@@ -229,6 +263,7 @@ export default function Dashboard() {
                     ))}
                   </Pie>
                   <Tooltip 
+                    formatter={(value: number) => formatCurrency(value, settings.currency)}
                     contentStyle={{ 
                       backgroundColor: 'var(--color-card)', 
                       borderColor: 'var(--color-border)',
@@ -245,7 +280,7 @@ export default function Dashboard() {
                     <div className="h-3 w-3 rounded-full" style={{ backgroundColor: cat.color }} />
                     <span className="text-sm font-medium">{cat.name}</span>
                   </div>
-                  <span className="text-sm font-bold">${cat.value.toLocaleString()}</span>
+                  <span className="text-sm font-bold">{formatCurrency(cat.value, settings.currency)}</span>
                 </div>
               ))}
             </div>
@@ -254,7 +289,11 @@ export default function Dashboard() {
           <div className="bg-card border rounded-2xl p-6 shadow-sm">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-lg font-bold">Recent Transactions</h3>
-              <Button variant="ghost" size="sm" className="text-xs font-bold text-primary hover:bg-primary/10">View All</Button>
+              <Link to="/transactions">
+                <Button variant="ghost" size="sm" className="text-xs font-bold text-primary hover:bg-primary/10">
+                  View All
+                </Button>
+              </Link>
             </div>
             <div className="space-y-4">
               {recentExpenses.length > 0 ? (
@@ -279,7 +318,7 @@ export default function Dashboard() {
                         </div>
                       </div>
                       <span className="text-sm font-bold text-destructive">
-                        -${expense.amount.toLocaleString()}
+                        -{formatCurrency(expense.amount, settings.currency)}
                       </span>
                     </div>
                   );

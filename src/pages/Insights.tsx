@@ -9,22 +9,32 @@ import { format, startOfMonth, endOfMonth, subMonths, isWithinInterval } from 'd
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { useStore } from '@/store/useStore';
-import { cn } from '@/lib/utils';
+import { StatCard } from '@/components/dashboard/StatCard';
+import { cn, formatCurrency } from '@/lib/utils';
 
 export default function Insights() {
   const { expenses, settings, categories } = useStore();
-  const [timeframe, setTimeframe] = useState('current');
+  
+  const months = useMemo(() => {
+    const result = [];
+    for (let i = 0; i < 12; i++) {
+      const date = subMonths(new Date(), i);
+      result.push({
+        label: format(date, 'MMMM yyyy'),
+        value: format(date, 'yyyy-MM'),
+      });
+    }
+    return result;
+  }, []);
+
+  const [timeframe, setTimeframe] = useState(months[0].value);
 
   const filteredExpenses = useMemo(() => {
-    const now = new Date();
-    let start = startOfMonth(now);
-    let end = endOfMonth(now);
-
-    if (timeframe === 'last') {
-      const lastMonth = subMonths(now, 1);
-      start = startOfMonth(lastMonth);
-      end = endOfMonth(lastMonth);
-    }
+    const [year, month] = timeframe.split('-').map(Number);
+    const targetDate = new Date(year, month - 1, 1);
+    
+    const start = startOfMonth(targetDate);
+    const end = endOfMonth(targetDate);
 
     return expenses.filter(e => isWithinInterval(new Date(e.date), { start, end }));
   }, [expenses, timeframe]);
@@ -33,8 +43,11 @@ export default function Insights() {
     filteredExpenses.reduce((sum, e) => sum + e.amount, 0),
   [filteredExpenses]);
 
+  const remainingBalance = settings.monthlySalary - totalSpent;
+  const budgetUtilization = (totalSpent / settings.monthlyBudget) * 100;
+
   const categoryBreakdown = useMemo(() => {
-    return categories.map(cat => {
+    const breakdown = categories.map(cat => {
       const amount = filteredExpenses
         .filter(e => e.category === cat.name)
         .reduce((sum, e) => sum + e.amount, 0);
@@ -43,15 +56,31 @@ export default function Insights() {
         value: amount,
         color: cat.color
       };
-    }).filter(d => d.value > 0).sort((a, b) => b.value - a.value);
+    });
+
+    // Catch expenses with categories not in the current list
+    const knownCategoryNames = categories.map(c => c.name);
+    const otherAmount = filteredExpenses
+      .filter(e => !knownCategoryNames.includes(e.category))
+      .reduce((sum, e) => sum + e.amount, 0);
+
+    if (otherAmount > 0) {
+      breakdown.push({
+        name: 'Other',
+        value: otherAmount,
+        color: '#64748b'
+      });
+    }
+
+    return breakdown.filter(d => d.value > 0).sort((a, b) => b.value - a.value);
   }, [filteredExpenses, categories]);
 
   const generatePDF = () => {
     const doc = new jsPDF();
     const now = new Date();
-    const monthName = timeframe === 'current' 
-      ? format(now, 'MMMM yyyy')
-      : format(subMonths(now, 1), 'MMMM yyyy');
+    const [year, month] = timeframe.split('-').map(Number);
+    const targetDate = new Date(year, month - 1, 1);
+    const monthName = format(targetDate, 'MMMM yyyy');
 
     // Header
     doc.setFontSize(24);
@@ -72,10 +101,10 @@ export default function Insights() {
       startY: 60,
       head: [['Metric', 'Value']],
       body: [
-        ['Monthly Income', `$${settings.monthlySalary.toLocaleString()}`],
-        ['Monthly Budget', `$${settings.monthlyBudget.toLocaleString()}`],
-        ['Total Expenses', `$${totalSpent.toLocaleString()}`],
-        ['Remaining Balance', `$${(settings.monthlySalary - totalSpent).toLocaleString()}`],
+        ['Monthly Income', formatCurrency(settings.monthlySalary, settings.currency)],
+        ['Monthly Budget', formatCurrency(settings.monthlyBudget, settings.currency)],
+        ['Total Expenses', formatCurrency(totalSpent, settings.currency)],
+        ['Remaining Balance', formatCurrency(settings.monthlySalary - totalSpent, settings.currency)],
         ['Budget Utilization', `${((totalSpent / settings.monthlyBudget) * 100).toFixed(1)}%`],
       ],
       theme: 'striped',
@@ -91,7 +120,7 @@ export default function Insights() {
       head: [['Category', 'Amount', '% of Total']],
       body: categoryBreakdown.map(c => [
         c.name,
-        `$${c.value.toLocaleString()}`,
+        formatCurrency(c.value, settings.currency),
         `${((c.value / totalSpent) * 100).toFixed(1)}%`
       ]),
       theme: 'grid',
@@ -108,7 +137,7 @@ export default function Insights() {
         format(new Date(e.date), 'MMM dd, yyyy'),
         e.category,
         e.description,
-        `$${e.amount.toLocaleString()}`
+        formatCurrency(e.amount, settings.currency)
       ]),
       theme: 'plain',
       styles: { fontSize: 9 }
@@ -120,62 +149,67 @@ export default function Insights() {
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Insights</h1>
-          <p className="text-muted-foreground mt-1">Deep dive into your spending habits and patterns.</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <Select value={timeframe} onValueChange={setTimeframe}>
-            <SelectTrigger className="w-[160px] rounded-xl bg-card border-none shadow-sm h-10">
-              <SelectValue placeholder="Select period" />
-            </SelectTrigger>
-            <SelectContent className="rounded-xl">
-              <SelectItem value="current">Current Month</SelectItem>
-              <SelectItem value="last">Last Month</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button onClick={generatePDF} variant="outline" className="rounded-xl h-10 gap-2 border-none bg-card shadow-sm hover:bg-muted">
-            <Download className="h-4 w-4" />
-            <span>Export PDF</span>
-          </Button>
-        </div>
-      </header>
+      <div className="relative overflow-hidden rounded-3xl bg-primary/5 p-6 md:p-8 border border-primary/10">
+        <div className="absolute top-0 right-0 -mt-4 -mr-4 h-32 w-32 rounded-full bg-primary/10 blur-3xl" />
+        <div className="absolute bottom-0 left-0 -mb-4 -ml-4 h-24 w-24 rounded-full bg-primary/10 blur-2xl" />
+        
+        <header className="relative flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-primary">
+              <BarChart3 className="h-5 w-5" />
+              <span className="text-xs font-black uppercase tracking-widest">Analytics</span>
+            </div>
+            <h1 className="text-3xl md:text-4xl font-black tracking-tight text-foreground">Financial Insights</h1>
+            <p className="text-sm md:text-base text-muted-foreground max-w-md">
+              Deep dive into your spending habits and patterns to optimize your financial health.
+            </p>
+          </div>
+          
+          <div className="flex flex-wrap items-center gap-3">
+            <Select value={timeframe} onValueChange={setTimeframe}>
+              <SelectTrigger className="w-[180px] md:w-[200px] rounded-xl bg-background/80 backdrop-blur-sm border border-border/50 shadow-sm h-11 text-xs font-bold hover:bg-background transition-all">
+                <Calendar className="h-3.5 w-3.5 mr-2 text-primary" />
+                <SelectValue placeholder="Select month" />
+              </SelectTrigger>
+              <SelectContent className="rounded-xl">
+                {months.map((m) => (
+                  <SelectItem key={m.value} value={m.value}>
+                    {m.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            
+            <Button 
+              onClick={generatePDF} 
+              className="rounded-xl h-11 px-6 gap-2 shadow-lg shadow-primary/20 font-bold transition-all hover:scale-105 active:scale-95"
+            >
+              <Download className="h-4 w-4" />
+              <span>Export Report</span>
+            </Button>
+          </div>
+        </header>
+      </div>
 
       <div className="grid gap-6 md:grid-cols-3">
-        <Card className="border-none shadow-sm rounded-2xl bg-primary/5">
-          <CardContent className="p-6 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-bold text-primary uppercase tracking-wider">Total Spent</p>
-              <h3 className="text-2xl font-black mt-1">${totalSpent.toLocaleString()}</h3>
-            </div>
-            <div className="h-12 w-12 bg-primary/10 rounded-2xl flex items-center justify-center">
-              <TrendingDown className="h-6 w-6 text-primary" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-none shadow-sm rounded-2xl bg-emerald-500/5">
-          <CardContent className="p-6 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Remaining</p>
-              <h3 className="text-2xl font-black mt-1">${(settings.monthlySalary - totalSpent).toLocaleString()}</h3>
-            </div>
-            <div className="h-12 w-12 bg-emerald-500/10 rounded-2xl flex items-center justify-center">
-              <TrendingUp className="h-6 w-6 text-emerald-600" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-none shadow-sm rounded-2xl bg-blue-500/5">
-          <CardContent className="p-6 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-bold text-blue-600 uppercase tracking-wider">Budget Used</p>
-              <h3 className="text-2xl font-black mt-1">{((totalSpent / settings.monthlyBudget) * 100).toFixed(1)}%</h3>
-            </div>
-            <div className="h-12 w-12 bg-blue-500/10 rounded-2xl flex items-center justify-center">
-              <BarChart3 className="h-6 w-6 text-blue-600" />
-            </div>
-          </CardContent>
-        </Card>
+        <StatCard 
+          title="Total Spent"
+          value={formatCurrency(totalSpent, settings.currency)}
+          icon={Wallet}
+          variant="primary"
+        />
+        <StatCard 
+          title="Remaining Balance"
+          value={formatCurrency(remainingBalance, settings.currency)}
+          icon={TrendingUp}
+          variant="success"
+        />
+        <StatCard 
+          title="Budget Utilization"
+          value={`${budgetUtilization.toFixed(1)}%`}
+          icon={BarChart3}
+          variant="warning"
+        />
       </div>
 
       <div className="grid gap-8 lg:grid-cols-2">
@@ -195,13 +229,15 @@ export default function Insights() {
                 <YAxis 
                   dataKey="name" 
                   type="category" 
-                  width={100} 
+                  width={80} 
                   axisLine={false} 
                   tickLine={false}
-                  tick={{ fontSize: 12, fontWeight: 600, fill: 'var(--color-foreground)' }}
+                  tick={{ fontSize: 11, fontWeight: 600, fill: 'var(--color-foreground)' }}
                 />
                 <Tooltip 
                   cursor={{ fill: 'var(--color-muted)', opacity: 0.4 }}
+                  formatter={(value: number) => formatCurrency(value, settings.currency)}
+                  itemStyle={{ color: 'var(--color-foreground)' }}
                   contentStyle={{ 
                     backgroundColor: 'var(--color-card)', 
                     borderColor: 'var(--color-border)',
@@ -239,7 +275,7 @@ export default function Insights() {
                       <span className="font-bold">{cat.name}</span>
                     </div>
                     <div className="text-right">
-                      <p className="font-black">${cat.value.toLocaleString()}</p>
+                      <p className="font-black">{formatCurrency(cat.value, settings.currency)}</p>
                       <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">
                         {((cat.value / totalSpent) * 100).toFixed(1)}% of total
                       </p>

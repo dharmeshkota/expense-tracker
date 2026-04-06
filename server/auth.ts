@@ -6,7 +6,7 @@ import prisma from './db.js';
 export function setupAuth(app: Express) {
   const googleClientId = process.env.AUTH_GOOGLE_ID;
   const googleClientSecret = process.env.AUTH_GOOGLE_SECRET;
-  const appUrl = process.env.APP_URL || 'http://localhost:3000';
+  const appUrl = process.env.APP_URL || 'http://localhost:4000';
 
   if (!process.env.APP_URL) {
     console.warn('APP_URL environment variable is not set. OAuth redirects may fail.');

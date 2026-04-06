@@ -63,10 +63,30 @@ export default function Settings() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <header>
-        <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
-        <p className="text-muted-foreground mt-1">Manage your profile, budget, and application preferences.</p>
-      </header>
+      <div className="relative overflow-hidden rounded-3xl bg-primary/5 p-6 md:p-8 border border-primary/10">
+        <div className="absolute top-0 right-0 -mt-4 -mr-4 h-32 w-32 rounded-full bg-primary/10 blur-3xl" />
+        <div className="absolute bottom-0 left-0 -mb-4 -ml-4 h-24 w-24 rounded-full bg-primary/10 blur-2xl" />
+        
+        <header className="relative flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-primary">
+              <Globe className="h-5 w-5" />
+              <span className="text-xs font-black uppercase tracking-widest">Preferences</span>
+            </div>
+            <h1 className="text-3xl md:text-4xl font-black tracking-tight text-foreground">Settings</h1>
+            <p className="text-sm md:text-base text-muted-foreground max-w-md">
+              Manage your profile, budget, and application preferences for a personalized experience.
+            </p>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            <Button variant="outline" onClick={handleLogout} className="rounded-xl h-11 px-6 gap-2 border-none bg-background/50 backdrop-blur-sm shadow-sm font-bold hover:bg-destructive/10 hover:text-destructive transition-all">
+              <LogOut className="h-4 w-4" />
+              <span>Logout</span>
+            </Button>
+          </div>
+        </header>
+      </div>
 
       <div className="grid gap-6">
         {/* Profile Section */}
@@ -119,7 +139,9 @@ export default function Settings() {
               <div className="space-y-2">
                 <Label htmlFor="salary" className="text-sm font-semibold">Monthly Income</Label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-bold">$</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-bold">
+                    {currencies.find(c => c.code === settings.currency)?.symbol || '$'}
+                  </span>
                   <Input 
                     id="salary" 
                     type="number" 
@@ -132,7 +154,9 @@ export default function Settings() {
               <div className="space-y-2">
                 <Label htmlFor="budget" className="text-sm font-semibold">Monthly Spending Budget</Label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-bold">$</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-bold">
+                    {currencies.find(c => c.code === settings.currency)?.symbol || '$'}
+                  </span>
                   <Input 
                     id="budget" 
                     type="number" 
@@ -174,14 +198,16 @@ export default function Settings() {
                   value={settings.currency} 
                   onValueChange={(val) => updateSettings({ currency: val })}
                 >
-                  <SelectTrigger className="rounded-xl bg-muted/50 border-none h-11">
+                  <SelectTrigger className="w-full sm:w-[240px] rounded-xl bg-card border border-border shadow-sm h-11 font-bold hover:bg-muted/50 transition-all">
                     <SelectValue placeholder="Select currency" />
                   </SelectTrigger>
                   <SelectContent className="rounded-xl">
                     {currencies.map((c) => (
                       <SelectItem key={c.code} value={c.code}>
-                        <span className="font-bold mr-2">{c.symbol}</span>
-                        {c.name} ({c.code})
+                        <div className="flex items-center gap-2">
+                          <span className="font-black text-primary bg-primary/10 w-6 h-6 rounded-lg flex items-center justify-center text-[10px]">{c.symbol}</span>
+                          <span>{c.name} ({c.code})</span>
+                        </div>
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -226,18 +252,15 @@ export default function Settings() {
             <CardDescription>Actions that cannot be undone. Please be careful.</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-4">
-            <Button variant="outline" onClick={handleLogout} className="rounded-xl px-6 gap-2 border-destructive/20 hover:bg-destructive/10 text-destructive">
-              <LogOut className="h-4 w-4" />
-              Logout
-            </Button>
-
             <AlertDialog>
-              <AlertDialogTrigger>
-                <Button variant="destructive" className="rounded-xl px-6 gap-2">
-                  <Trash2 className="h-4 w-4" />
-                  Reset All Data
-                </Button>
-              </AlertDialogTrigger>
+              <AlertDialogTrigger 
+                render={
+                  <Button variant="destructive" className="rounded-xl px-6 gap-2 shadow-lg shadow-destructive/20 font-bold transition-all hover:scale-105 active:scale-95">
+                    <Trash2 className="h-4 w-4" />
+                    Reset All Data
+                  </Button>
+                }
+              />
               <AlertDialogContent className="rounded-2xl">
                 <AlertDialogHeader>
                   <AlertDialogTitle className="flex items-center gap-2">

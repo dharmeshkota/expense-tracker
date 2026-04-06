@@ -8,7 +8,7 @@ import { CheckCircle2, Circle, AlertCircle, Plus, Trash2, Receipt, Calendar as C
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useStore } from '@/store/useStore';
-import { cn } from '@/lib/utils';
+import { cn, formatCurrency } from '@/lib/utils';
 import { format } from 'date-fns';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -30,7 +30,7 @@ const billSchema = z.object({
 type BillFormValues = z.infer<typeof billSchema>;
 
 export default function Bills() {
-  const { bills, setBills, addBill, toggleBillPaid } = useStore();
+  const { bills, setBills, addBill, toggleBillPaid, settings } = useStore();
   const [isAddOpen, setIsAddOpen] = useState(false);
 
   const { register, handleSubmit, formState: { errors, isSubmitting }, reset } = useForm<BillFormValues>({
@@ -116,16 +116,31 @@ export default function Bills() {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Recurring Bills</h1>
-          <p className="text-muted-foreground mt-1">Manage your monthly commitments and subscriptions.</p>
-        </div>
-        <Button onClick={() => setIsAddOpen(true)} className="rounded-xl h-10 px-4 gap-2 shadow-lg shadow-primary/20">
-          <Plus className="h-4 w-4" />
-          <span>Add Bill</span>
-        </Button>
-      </header>
+      <div className="relative overflow-hidden rounded-3xl bg-primary/5 p-6 md:p-8 border border-primary/10">
+        <div className="absolute top-0 right-0 -mt-4 -mr-4 h-32 w-32 rounded-full bg-primary/10 blur-3xl" />
+        <div className="absolute bottom-0 left-0 -mb-4 -ml-4 h-24 w-24 rounded-full bg-primary/10 blur-2xl" />
+        
+        <header className="relative flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-primary">
+              <Receipt className="h-5 w-5" />
+              <span className="text-xs font-black uppercase tracking-widest">Subscriptions</span>
+            </div>
+            <h1 className="text-3xl md:text-4xl font-black tracking-tight text-foreground">Recurring Bills</h1>
+            <p className="text-sm md:text-base text-muted-foreground max-w-md">
+              Keep track of your monthly commitments and never miss a payment.
+            </p>
+          </div>
+          
+          <Button 
+            onClick={() => setIsAddOpen(true)} 
+            className="rounded-xl h-11 px-6 gap-2 shadow-lg shadow-primary/20 font-bold transition-all hover:scale-105 active:scale-95"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Add New Bill</span>
+          </Button>
+        </header>
+      </div>
 
       {unpaidUpcoming.length > 0 && (
         <div className="bg-destructive/10 border border-destructive/20 rounded-2xl p-4 flex items-start space-x-3">
@@ -146,40 +161,40 @@ export default function Bills() {
               "border-none shadow-sm transition-all duration-200 rounded-2xl overflow-hidden",
               bill.isPaid ? "bg-muted/30 opacity-60" : "bg-card hover:shadow-md"
             )}>
-              <CardContent className="p-6 flex items-center justify-between">
-                <div className="flex items-center space-x-4">
+              <CardContent className="p-4 md:p-6 flex flex-row items-center justify-between gap-4">
+                <div className="flex items-center space-x-3 md:space-x-4 min-w-0">
                   <button 
                     onClick={() => handleTogglePaid(bill.id, bill.isPaid)}
-                    className="transition-transform hover:scale-110 focus:outline-none"
+                    className="transition-transform hover:scale-110 focus:outline-none shrink-0"
                   >
                     {bill.isPaid ? (
-                      <CheckCircle2 className="h-8 w-8 text-primary fill-primary/10" />
+                      <CheckCircle2 className="h-7 w-7 md:h-8 md:h-8 text-primary fill-primary/10" />
                     ) : (
-                      <Circle className="h-8 w-8 text-muted-foreground" />
+                      <Circle className="h-7 w-7 md:h-8 md:h-8 text-muted-foreground" />
                     )}
                   </button>
-                  <div>
+                  <div className="min-w-0">
                     <h3 className={cn(
-                      "font-bold text-lg",
+                      "font-bold text-base md:text-lg truncate",
                       bill.isPaid && "line-through text-muted-foreground"
                     )}>
                       {bill.name}
                     </h3>
-                    <div className="flex items-center space-x-3 mt-1">
-                      <div className="flex items-center text-xs font-medium text-muted-foreground bg-muted px-2 py-1 rounded-lg">
+                    <div className="flex flex-wrap items-center gap-2 md:gap-3 mt-1">
+                      <div className="flex items-center text-[10px] md:text-xs font-medium text-muted-foreground bg-muted px-2 py-0.5 md:py-1 rounded-lg">
                         <CalendarIcon className="h-3 w-3 mr-1" />
                         Due on {bill.dueDate}{bill.dueDate === 1 ? 'st' : bill.dueDate === 2 ? 'nd' : bill.dueDate === 3 ? 'rd' : 'th'}
                       </div>
-                      <span className="text-sm font-bold text-foreground">
-                        ${bill.amount.toLocaleString()}
+                      <span className="text-xs md:text-sm font-bold text-foreground">
+                        {formatCurrency(bill.amount, settings.currency)}
                       </span>
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center space-x-3">
+                <div className="flex items-center space-x-2 md:space-x-3 shrink-0">
                   {!bill.isPaid && bill.dueDate <= today + 3 && (
-                    <Badge variant="destructive" className="rounded-lg px-2 py-1 text-[10px] font-bold animate-pulse">
-                      DUE SOON
+                    <Badge variant="destructive" className="rounded-lg px-1.5 py-0.5 text-[8px] md:text-[10px] font-bold animate-pulse">
+                      DUE
                     </Badge>
                   )}
                   <button 
@@ -215,43 +230,45 @@ export default function Bills() {
           <DialogHeader>
             <DialogTitle className="text-xl font-bold">Add Recurring Bill</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-5 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="name" className="text-sm font-semibold">Bill Name</Label>
-              <Input 
-                id="name" 
-                placeholder="Rent, Netflix, Gym, etc." 
-                className="rounded-xl bg-muted/50 border-none h-11"
-                {...register('name')} 
-              />
-              {errors.name && <p className="text-xs text-destructive font-medium">{errors.name.message}</p>}
+          <form onSubmit={handleSubmit(onSubmit)}>
+            <div className="space-y-5 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="name" className="text-sm font-semibold">Bill Name</Label>
+                <Input 
+                  id="name" 
+                  placeholder="Rent, Netflix, Gym, etc." 
+                  className="rounded-xl bg-muted/50 border-none h-11"
+                  {...register('name')} 
+                />
+                {errors.name && <p className="text-xs text-destructive font-medium">{errors.name.message}</p>}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="amount" className="text-sm font-semibold">Monthly Amount ({settings.currency})</Label>
+                <Input 
+                  id="amount" 
+                  type="number" 
+                  step="0.01" 
+                  placeholder="0.00"
+                  className="rounded-xl bg-muted/50 border-none h-11"
+                  {...register('amount')} 
+                />
+                {errors.amount && <p className="text-xs text-destructive font-medium">{errors.amount.message}</p>}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="dueDate" className="text-sm font-semibold">Due Date (Day of Month)</Label>
+                <Input 
+                  id="dueDate" 
+                  type="number" 
+                  min="1" 
+                  max="31" 
+                  placeholder="15"
+                  className="rounded-xl bg-muted/50 border-none h-11"
+                  {...register('dueDate')} 
+                />
+                {errors.dueDate && <p className="text-xs text-destructive font-medium">{errors.dueDate.message}</p>}
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="amount" className="text-sm font-semibold">Monthly Amount ($)</Label>
-              <Input 
-                id="amount" 
-                type="number" 
-                step="0.01" 
-                placeholder="0.00"
-                className="rounded-xl bg-muted/50 border-none h-11"
-                {...register('amount')} 
-              />
-              {errors.amount && <p className="text-xs text-destructive font-medium">{errors.amount.message}</p>}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="dueDate" className="text-sm font-semibold">Due Date (Day of Month)</Label>
-              <Input 
-                id="dueDate" 
-                type="number" 
-                min="1" 
-                max="31" 
-                placeholder="15"
-                className="rounded-xl bg-muted/50 border-none h-11"
-                {...register('dueDate')} 
-              />
-              {errors.dueDate && <p className="text-xs text-destructive font-medium">{errors.dueDate.message}</p>}
-            </div>
-            <DialogFooter className="pt-4 gap-3">
+            <DialogFooter className="gap-3">
               <Button type="button" variant="ghost" onClick={() => setIsAddOpen(false)} className="rounded-xl">Cancel</Button>
               <Button type="submit" disabled={isSubmitting} className="rounded-xl px-8 shadow-lg shadow-primary/20">
                 {isSubmitting ? 'Saving...' : 'Save Bill'}
