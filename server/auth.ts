@@ -1,6 +1,8 @@
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
+import { Strategy as LocalStrategy } from 'passport-local';
 import { Express } from 'express';
+import bcrypt from 'bcryptjs';
 import prisma from './db.js';
 
 export function setupAuth(app: Express) {
@@ -11,6 +13,26 @@ export function setupAuth(app: Express) {
   if (!process.env.APP_URL) {
     console.warn('APP_URL environment variable is not set. OAuth redirects may fail.');
   }
+
+  // Local Strategy
+  passport.use(new LocalStrategy({
+    usernameField: 'email',
+    passwordField: 'password',
+  }, async (email, password, done) => {
+    try {
+      const user = await prisma.user.findUnique({ where: { email } });
+      if (!user || !user.password) {
+        return done(null, false, { message: 'Invalid email or password' });
+      }
+      const isMatch = await bcrypt.compare(password, user.password);
+      if (!isMatch) {
+        return done(null, false, { message: 'Invalid email or password' });
+      }
+      return done(null, user);
+    } catch (error) {
+      return done(error);
+    }
+  }));
 
   if (!googleClientId || !googleClientSecret) {
     console.error('CRITICAL: AUTH_GOOGLE_ID or AUTH_GOOGLE_SECRET is missing. Google Login will not work.');
@@ -51,6 +73,42 @@ export function setupAuth(app: Express) {
     } catch (error) {
       done(error);
     }
+  });
+
+  // Auth Routes
+  app.post('/api/auth/signup', async (req, res) => {
+    const { email, password, name } = req.body;
+    try {
+      const existingUser = await prisma.user.findUnique({ where: { email } });
+      if (existingUser) {
+        return res.status(400).json({ error: 'User already exists' });
+      }
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const user = await prisma.user.create({
+        data: {
+          email,
+          password: hashedPassword,
+          name,
+        },
+      });
+      req.login(user, (err) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(user);
+      });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to create user' });
+    }
+  });
+
+  app.post('/api/auth/login', (req, res, next) => {
+    passport.authenticate('local', (err: any, user: any, info: any) => {
+      if (err) return next(err);
+      if (!user) return res.status(400).json({ error: info.message });
+      req.login(user, (err) => {
+        if (err) return next(err);
+        res.json(user);
+      });
+    })(req, res, next);
   });
 
   app.get('/api/auth/google/url', (req, res) => {

@@ -10,25 +10,108 @@ export function setupRoutes(app: Express) {
 
   // Expense Routes
   app.get('/api/expenses', isAuthenticated, async (req: any, res) => {
-    const expenses = await prisma.expense.findMany({
-      where: { userId: req.user.id },
-      orderBy: { date: 'desc' },
+    const { month, year, page = '1', limit = '10', type } = req.query;
+    const p = parseInt(page as string);
+    const l = parseInt(limit as string);
+    
+    const where: any = { userId: req.user.id };
+    
+    if (month && year) {
+      const m = parseInt(month as string);
+      const y = parseInt(year as string);
+      where.date = {
+        gte: new Date(y, m - 1, 1),
+        lte: new Date(y, m, 0),
+      };
+    }
+
+    if (type) {
+      where.type = type;
+    }
+
+    const [expenses, total] = await prisma.$transaction([
+      (prisma.expense as any).findMany({
+        where,
+        orderBy: { date: 'desc' },
+        skip: (p - 1) * l,
+        take: l,
+      }),
+      (prisma.expense as any).count({ where }),
+    ]);
+
+    res.json({
+      expenses,
+      pagination: {
+        total,
+        pages: Math.ceil(total / l),
+        currentPage: p,
+        limit: l,
+      }
     });
-    res.json(expenses);
   });
 
   app.post('/api/expenses', isAuthenticated, async (req: any, res) => {
-    const { amount, category, description, date } = req.body;
-    const expense = await prisma.expense.create({
+    const { amount, category, description, date, type = 'expense' } = req.body;
+    const expense = await (prisma.expense as any).create({
       data: {
         amount: parseFloat(amount),
         category,
         description,
+        type,
         date: new Date(date),
         userId: req.user.id,
       },
     });
     res.json(expense);
+  });
+
+  // Category Routes
+  app.get('/api/categories', isAuthenticated, async (req: any, res) => {
+    const categories = await prisma.category.findMany({
+      where: { userId: req.user.id },
+      orderBy: { name: 'asc' },
+    });
+    res.json(categories);
+  });
+
+  app.post('/api/categories', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id, name, icon, color, excludeFromBudget, type = 'expense' } = req.body;
+      
+      const category = await (prisma.category as any).upsert({
+        where: id ? { id } : {
+          userId_name: {
+            userId: req.user.id,
+            name,
+          },
+        },
+        update: { 
+          icon, 
+          color, 
+          excludeFromBudget: Boolean(excludeFromBudget), 
+          type: type 
+        },
+        create: {
+          name,
+          icon,
+          color,
+          excludeFromBudget: Boolean(excludeFromBudget),
+          type: type,
+          userId: req.user.id,
+        },
+      });
+      res.json(category);
+    } catch (error: any) {
+      console.error('Category save error:', error);
+      res.status(500).json({ error: error.message || 'Failed to save category' });
+    }
+  });
+
+  app.delete('/api/categories/:id', isAuthenticated, async (req: any, res) => {
+    await prisma.category.delete({
+      where: { id: req.params.id, userId: req.user.id },
+    });
+    res.json({ success: true });
   });
 
   app.delete('/api/expenses/:id', isAuthenticated, async (req: any, res) => {
@@ -165,38 +248,61 @@ export function setupRoutes(app: Express) {
     const startDate = new Date(y, m - 1, 1);
     const endDate = new Date(y, m, 0);
 
-    const expenses = await prisma.expense.findMany({
-      where: {
-        userId: req.user.id,
-        date: {
-          gte: startDate,
-          lte: endDate,
-        },
-      },
-    });
-
-    const budget = await prisma.budget.findUnique({
-      where: {
-        userId_month_year: {
+    const [expenses, categories, budget] = await prisma.$transaction([
+      prisma.expense.findMany({
+        where: {
           userId: req.user.id,
-          month: m,
-          year: y,
+          date: {
+            gte: startDate,
+            lte: endDate,
+          },
         },
-      },
-    });
+      }),
+      prisma.category.findMany({
+        where: { userId: req.user.id },
+      }),
+      prisma.budget.findUnique({
+        where: {
+          userId_month_year: {
+            userId: req.user.id,
+            month: m,
+            year: y,
+          },
+        },
+      }),
+    ]);
 
-    const totalSpent = expenses.reduce((sum, e) => sum + e.amount, 0);
-    const categoryBreakdown = expenses.reduce((acc: any, e) => {
-      acc[e.category] = (acc[e.category] || 0) + e.amount;
-      return acc;
-    }, {});
+    const excludedCategoryNames = categories
+      .filter(c => c.excludeFromBudget)
+      .map(c => c.name);
+
+    const totalIncome = expenses
+      .filter(e => e.type === 'income')
+      .reduce((sum, e) => sum + e.amount, 0);
+
+    const totalSpent = expenses
+      .filter(e => e.type === 'expense')
+      .reduce((sum, e) => sum + e.amount, 0);
+
+    const budgetSpent = expenses
+      .filter(e => e.type === 'expense' && !excludedCategoryNames.includes(e.category))
+      .reduce((sum, e) => sum + e.amount, 0);
+
+    const categoryBreakdown = expenses
+      .filter(e => e.type === 'expense')
+      .reduce((acc: any, e) => {
+        acc[e.category] = (acc[e.category] || 0) + e.amount;
+        return acc;
+      }, {});
 
     res.json({
       totalSalary: budget?.totalSalary || 0,
+      totalIncome,
       totalSpent,
-      remaining: (budget?.totalSalary || 0) - totalSpent,
+      budgetSpent,
+      remaining: (budget?.totalSalary || 0) + totalIncome - totalSpent,
       categoryBreakdown: Object.entries(categoryBreakdown).map(([name, value]) => ({ name, value })),
-      recentExpenses: expenses.slice(0, 5),
+      recentExpenses: expenses.sort((a, b) => b.date.getTime() - a.date.getTime()).slice(0, 5),
     });
   });
 

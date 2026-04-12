@@ -13,6 +13,8 @@ export interface Category {
   name: string;
   icon: string;
   color: string;
+  excludeFromBudget?: boolean;
+  type?: 'expense' | 'income' | 'both';
 }
 
 export interface Expense {
@@ -21,6 +23,7 @@ export interface Expense {
   description: string;
   category: string;
   date: string;
+  type?: 'expense' | 'income';
 }
 
 export interface Bill {
@@ -58,17 +61,21 @@ interface AppState {
   toggleBillPaid: (id: string) => void;
   settings: Settings;
   updateSettings: (settings: Partial<Settings>) => void;
+  dashboardStats: any;
+  setDashboardStats: (stats: any) => void;
+  insightStats: any;
+  setInsightStats: (stats: any) => void;
 }
 
 const defaultCategories: Category[] = [
-  { id: '1', name: 'Food',          icon: 'Utensils',       color: '#ff6b2b' }, // electric orange
-  { id: '2', name: 'Transport',     icon: 'Car',            color: '#00c2e0' }, // electric cyan
-  { id: '3', name: 'Entertainment', icon: 'Gamepad2',       color: '#a855f7' }, // bold violet
-  { id: '4', name: 'Shopping',      icon: 'ShoppingBag',    color: '#f43f8e' }, // hot pink
-  { id: '5', name: 'Health',        icon: 'HeartPulse',     color: '#ff4757' }, // vivid red
-  { id: '6', name: 'Bills',         icon: 'Receipt',        color: '#00e096' }, // neon mint
-  { id: '7', name: 'Education',     icon: 'GraduationCap',  color: '#1e90ff' }, // bright blue
-  { id: '8', name: 'Others',        icon: 'MoreHorizontal', color: '#94a3b8' }, // cool slate
+  { id: '1', name: 'Food', icon: 'Utensils', color: '#f97316', type: 'expense' },
+  { id: '2', name: 'Transport', icon: 'Car', color: '#06b6d4', type: 'expense' },
+  { id: '3', name: 'Entertainment', icon: 'Gamepad2', color: '#8b5cf6', type: 'expense' },
+  { id: '4', name: 'Shopping', icon: 'ShoppingBag', color: '#ec4899', type: 'expense' },
+  { id: '5', name: 'Health', icon: 'HeartPulse', color: '#ef4444', type: 'expense' },
+  { id: '6', name: 'Bills', icon: 'Receipt', color: '#10b981', type: 'expense' },
+  { id: '7', name: 'Education', icon: 'GraduationCap', color: '#3b82f6', type: 'expense' },
+  { id: '8', name: 'Others', icon: 'MoreHorizontal', color: '#64748b', type: 'expense' },
 ];
 
 export const useStore = create<AppState>()(
@@ -86,27 +93,28 @@ export const useStore = create<AppState>()(
       setCategories: (categories) => set({ categories }),
       addCategory: (category) => set((state) => ({ categories: [...state.categories, category] })),
       removeCategory: (id) => set((state) => ({ categories: state.categories.filter((c) => c.id !== id) })),
-      updateCategory: (category) =>
-        set((state) => ({
-          categories: state.categories.map((c) => (c.id === category.id ? category : c)),
-        })),
+      updateCategory: (category) => set((state) => ({
+        categories: state.categories.map((c) => c.id === category.id ? category : c)
+      })),
       bills: [],
       setBills: (bills) => set({ bills }),
       addBill: (bill) => set((state) => ({ bills: [...state.bills, bill] })),
-      toggleBillPaid: (id) =>
-        set((state) => ({
-          bills: state.bills.map((b) => (b.id === id ? { ...b, isPaid: !b.isPaid } : b)),
-        })),
+      toggleBillPaid: (id) => set((state) => ({
+        bills: state.bills.map((b) => b.id === id ? { ...b, isPaid: !b.isPaid } : b)
+      })),
       settings: {
         monthlySalary: 5000,
         monthlyBudget: 3000,
         currency: 'USD',
         theme: 'system',
       },
-      updateSettings: (newSettings) =>
-        set((state) => ({
-          settings: { ...state.settings, ...newSettings },
-        })),
+      updateSettings: (newSettings) => set((state) => ({
+        settings: { ...state.settings, ...newSettings }
+      })),
+      dashboardStats: null,
+      setDashboardStats: (stats) => set({ dashboardStats: stats }),
+      insightStats: null,
+      setInsightStats: (stats) => set({ insightStats: stats }),
     }),
     {
       name: 'expense-flow-storage',
@@ -115,6 +123,8 @@ export const useStore = create<AppState>()(
         categories: state.categories,
         bills: state.bills,
         settings: state.settings,
+        dashboardStats: state.dashboardStats,
+        insightStats: state.insightStats,
       }),
     }
   )

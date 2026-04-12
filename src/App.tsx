@@ -12,7 +12,7 @@ import Categories from './pages/Categories';
 import Login from './pages/Login';
 
 function App() {
-  const { user, setUser, isLoading, setIsLoading, settings } = useStore();
+  const { user, setUser, isLoading, setIsLoading, settings, setCategories } = useStore();
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -33,6 +33,13 @@ function App() {
         if (res.ok) {
           const data = await res.json();
           setUser(data);
+          
+          // Fetch categories after successful auth
+          const catRes = await fetch('/api/categories');
+          if (catRes.ok) {
+            const catData = await catRes.json();
+            setCategories(catData);
+          }
         }
       } catch (error) {
         console.error('Auth check failed:', error);
@@ -41,7 +48,7 @@ function App() {
       }
     };
     checkAuth();
-  }, [setUser, setIsLoading]);
+  }, [setUser, setIsLoading, setCategories]);
 
   if (isLoading) {
     return (

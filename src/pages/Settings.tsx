@@ -1,14 +1,14 @@
 import { useState } from 'react';
+import { useStore } from '@/store/useStore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useStore } from '@/store/useStore';
 import { toast } from 'sonner';
-import { LogOut, Save, User, Wallet, Moon, Sun, Smartphone, Globe, Palette, Trash2, AlertTriangle } from 'lucide-react';
+import { Settings as SettingsIcon, Wallet, Palette, Trash2, LogOut, Globe, Moon, Sun, Smartphone, AlertTriangle, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { 
   AlertDialog,
   AlertDialogAction,
@@ -33,7 +33,7 @@ export default function Settings() {
   const { user, settings, updateSettings, setExpenses, setBills } = useStore();
   const [salary, setSalary] = useState(settings.monthlySalary.toString());
   const [budget, setBudget] = useState(settings.monthlyBudget.toString());
-
+  
   const handleSaveFinancials = () => {
     updateSettings({
       monthlySalary: parseFloat(salary),
@@ -62,7 +62,7 @@ export default function Settings() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       <div className="relative overflow-hidden rounded-3xl bg-primary/5 p-6 md:p-8 border border-primary/10">
         <div className="absolute top-0 right-0 -mt-4 -mr-4 h-32 w-32 rounded-full bg-primary/10 blur-3xl" />
         <div className="absolute bottom-0 left-0 -mb-4 -ml-4 h-24 w-24 rounded-full bg-primary/10 blur-2xl" />
@@ -70,7 +70,7 @@ export default function Settings() {
         <header className="relative flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-1">
             <div className="flex items-center gap-2 text-primary">
-              <Globe className="h-5 w-5" />
+              <SettingsIcon className="h-5 w-5" />
               <span className="text-xs font-black uppercase tracking-widest">Preferences</span>
             </div>
             <h1 className="text-3xl md:text-4xl font-black tracking-tight text-foreground">Settings</h1>
@@ -88,21 +88,21 @@ export default function Settings() {
         </header>
       </div>
 
-      <div className="grid gap-6">
+      <div className="grid gap-8">
         {/* Profile Section */}
-        <Card className="border-none shadow-sm rounded-2xl overflow-hidden">
-          <CardHeader className="pb-4">
-            <div className="flex items-center gap-2">
-              <div className="p-2 bg-primary/10 rounded-xl">
+        <Card className="border-none shadow-sm rounded-2xl overflow-hidden pb-0">
+          <CardHeader className="bg-muted/30 py-4">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
                 <User className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <CardTitle className="text-lg">Profile Information</CardTitle>
-                <CardDescription>Your personal account details from Google.</CardDescription>
+                <CardTitle className="text-lg font-bold">Profile Information</CardTitle>
+                <CardDescription>Your personal account details.</CardDescription>
               </div>
             </div>
           </CardHeader>
-          <CardContent className="flex flex-col sm:flex-row items-center gap-6 pt-2">
+          <CardContent className="flex flex-col sm:flex-row items-center gap-6 p-6">
             <Avatar className="h-24 w-24 border-4 border-muted shadow-inner">
               <AvatarImage src={user?.image} />
               <AvatarFallback className="text-2xl font-bold bg-primary/5 text-primary">
@@ -113,32 +113,32 @@ export default function Settings() {
               <h3 className="text-2xl font-bold">{user?.name}</h3>
               <p className="text-muted-foreground font-medium">{user?.email}</p>
               <div className="pt-2">
-                <Badge variant="secondary" className="rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-wider">
-                  Google Account Connected
-                </Badge>
+                <span className="inline-flex items-center rounded-lg bg-secondary px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-secondary-foreground">
+                  Account Active
+                </span>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Financial Settings */}
-        <Card className="border-none shadow-sm rounded-2xl overflow-hidden">
-          <CardHeader className="pb-4">
-            <div className="flex items-center gap-2">
-              <div className="p-2 bg-emerald-500/10 rounded-xl">
+        {/* Financial Targets */}
+        <Card className="border-none shadow-sm rounded-2xl overflow-hidden pb-0">
+          <CardHeader className="bg-muted/30 py-4">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
                 <Wallet className="h-5 w-5 text-emerald-500" />
               </div>
               <div>
-                <CardTitle className="text-lg">Financial Configuration</CardTitle>
+                <CardTitle className="text-lg font-bold">Financial Configuration</CardTitle>
                 <CardDescription>Set your monthly income and spending targets.</CardDescription>
               </div>
             </div>
           </CardHeader>
-          <CardContent className="space-y-6 pt-2">
+          <CardContent className="p-6 space-y-6">
             <div className="grid sm:grid-cols-2 gap-6">
               <div className="space-y-2">
-                <Label htmlFor="salary" className="text-sm font-semibold">Monthly Income</Label>
-                <div className="relative">
+                <Label htmlFor="salary" className="text-sm font-bold">Monthly Income</Label>
+                <div className="relative group">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-bold">
                     {currencies.find(c => c.code === settings.currency)?.symbol || '$'}
                   </span>
@@ -147,13 +147,13 @@ export default function Settings() {
                     type="number" 
                     value={salary} 
                     onChange={(e) => setSalary(e.target.value)} 
-                    className="pl-8 rounded-xl bg-muted/50 border-none h-11"
+                    className="pl-8 h-11 rounded-xl bg-muted/30 border-none focus:ring-2 focus:ring-primary/20 transition-all font-bold"
                   />
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="budget" className="text-sm font-semibold">Monthly Spending Budget</Label>
-                <div className="relative">
+                <Label htmlFor="budget" className="text-sm font-bold">Monthly Spending Budget</Label>
+                <div className="relative group">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-bold">
                     {currencies.find(c => c.code === settings.currency)?.symbol || '$'}
                   </span>
@@ -162,12 +162,12 @@ export default function Settings() {
                     type="number" 
                     value={budget} 
                     onChange={(e) => setBudget(e.target.value)} 
-                    className="pl-8 rounded-xl bg-muted/50 border-none h-11"
+                    className="pl-8 h-11 rounded-xl bg-muted/30 border-none focus:ring-2 focus:ring-primary/20 transition-all font-bold"
                   />
                 </div>
               </div>
             </div>
-            <Button onClick={handleSaveFinancials} className="rounded-xl px-6 gap-2 shadow-lg shadow-primary/20">
+            <Button onClick={handleSaveFinancials} className="rounded-xl px-6 gap-2 shadow-lg shadow-primary/20 font-bold">
               <Save className="h-4 w-4" />
               Save Financials
             </Button>
@@ -175,22 +175,22 @@ export default function Settings() {
         </Card>
 
         {/* Preferences */}
-        <Card className="border-none shadow-sm rounded-2xl overflow-hidden">
-          <CardHeader className="pb-4">
-            <div className="flex items-center gap-2">
-              <div className="p-2 bg-blue-500/10 rounded-xl">
+        <Card className="border-none shadow-sm rounded-2xl overflow-hidden pb-0">
+          <CardHeader className="bg-muted/30 py-4">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
                 <Palette className="h-5 w-5 text-blue-500" />
               </div>
               <div>
-                <CardTitle className="text-lg">App Preferences</CardTitle>
+                <CardTitle className="text-lg font-bold">App Preferences</CardTitle>
                 <CardDescription>Customize your experience and localization.</CardDescription>
               </div>
             </div>
           </CardHeader>
-          <CardContent className="space-y-6 pt-2">
+          <CardContent className="p-6 space-y-6">
             <div className="grid sm:grid-cols-2 gap-8">
               <div className="space-y-3">
-                <Label className="text-sm font-semibold flex items-center gap-2">
+                <Label className="text-sm font-bold flex items-center gap-2">
                   <Globe className="h-4 w-4 text-muted-foreground" />
                   Currency Display
                 </Label>
@@ -198,7 +198,7 @@ export default function Settings() {
                   value={settings.currency} 
                   onValueChange={(val) => updateSettings({ currency: val })}
                 >
-                  <SelectTrigger className="w-full sm:w-[240px] rounded-xl bg-card border border-border shadow-sm h-11 font-bold hover:bg-muted/50 transition-all">
+                <SelectTrigger className="w-full sm:w-[240px] rounded-xl bg-muted/50 border border-border/50 h-11 font-bold hover:bg-muted transition-all">
                     <SelectValue placeholder="Select currency" />
                   </SelectTrigger>
                   <SelectContent className="rounded-xl">
@@ -215,11 +215,11 @@ export default function Settings() {
               </div>
 
               <div className="space-y-3">
-                <Label className="text-sm font-semibold flex items-center gap-2">
+                <Label className="text-sm font-bold flex items-center gap-2">
                   <Moon className="h-4 w-4 text-muted-foreground" />
                   Theme Mode
                 </Label>
-                <div className="grid grid-cols-3 gap-2 p-1 bg-muted/50 rounded-xl">
+                <div className="grid grid-cols-3 gap-2 p-1.5 bg-muted/50 rounded-2xl border border-border/50">
                   {[
                     { id: 'light', icon: Sun, label: 'Light' },
                     { id: 'dark', icon: Moon, label: 'Dark' },
@@ -229,10 +229,10 @@ export default function Settings() {
                       key={t.id}
                       onClick={() => updateSettings({ theme: t.id as any })}
                       className={cn(
-                        "flex flex-col items-center justify-center gap-1.5 py-2 rounded-lg transition-all",
+                        "flex flex-col items-center justify-center gap-1.5 py-2.5 rounded-xl transition-all",
                         settings.theme === t.id 
-                          ? "bg-background shadow-sm text-primary" 
-                          : "text-muted-foreground hover:text-foreground"
+                          ? "bg-background shadow-md text-primary ring-1 ring-primary/10" 
+                          : "text-muted-foreground hover:text-foreground hover:bg-background/50"
                       )}
                     >
                       <t.icon className="h-4 w-4" />
@@ -248,19 +248,17 @@ export default function Settings() {
         {/* Danger Zone */}
         <Card className="border-none shadow-sm rounded-2xl overflow-hidden bg-destructive/5">
           <CardHeader>
-            <CardTitle className="text-lg text-destructive">Danger Zone</CardTitle>
+            <CardTitle className="text-lg text-destructive font-bold">Danger Zone</CardTitle>
             <CardDescription>Actions that cannot be undone. Please be careful.</CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-wrap gap-4">
+          <CardContent className="flex flex-wrap gap-4 p-6">
             <AlertDialog>
-              <AlertDialogTrigger 
-                render={
-                  <Button variant="destructive" className="rounded-xl px-6 gap-2 shadow-lg shadow-destructive/20 font-bold transition-all hover:scale-105 active:scale-95">
-                    <Trash2 className="h-4 w-4" />
-                    Reset All Data
-                  </Button>
-                }
-              />
+              <AlertDialogTrigger render={
+                <Button variant="destructive" className="rounded-xl px-6 gap-2 shadow-lg shadow-destructive/20 font-bold transition-all hover:scale-105 active:scale-95">
+                  <Trash2 className="h-4 w-4" />
+                  Reset All Data
+                </Button>
+              } />
               <AlertDialogContent className="rounded-2xl">
                 <AlertDialogHeader>
                   <AlertDialogTitle className="flex items-center gap-2">
@@ -286,14 +284,23 @@ export default function Settings() {
   );
 }
 
-function Badge({ children, variant, className }: { children: React.ReactNode, variant?: 'secondary', className?: string }) {
+function Save({ className }: { className?: string }) {
   return (
-    <span className={cn(
-      "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
-      variant === 'secondary' ? "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80" : "",
-      className
-    )}>
-      {children}
-    </span>
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+      <polyline points="17 21 17 13 7 13 7 21" />
+      <polyline points="7 3 7 8 15 8" />
+    </svg>
   );
 }

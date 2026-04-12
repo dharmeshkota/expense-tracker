@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { useStore } from '@/store/useStore';
+import { cn } from '@/lib/utils';
 
 const expenseSchema = z.object({
   amount: z.string().refine((val) => !isNaN(parseFloat(val)) && parseFloat(val) > 0, {
@@ -16,6 +17,7 @@ const expenseSchema = z.object({
   category: z.string().min(1, "Category is required"),
   description: z.string().min(1, "Description is required"),
   date: z.string().min(1, "Date is required"),
+  type: z.enum(['expense', 'income']),
 });
 
 type ExpenseFormValues = z.infer<typeof expenseSchema>;
@@ -28,30 +30,36 @@ interface QuickAddExpenseProps {
 
 export function QuickAddExpense({ isOpen, onClose, onSuccess }: QuickAddExpenseProps) {
   const { categories, addExpense, settings } = useStore();
-  const { register, handleSubmit, formState: { errors, isSubmitting }, reset, setValue } = useForm<ExpenseFormValues>({
+  const { register, handleSubmit, formState: { errors, isSubmitting }, reset, setValue, watch } = useForm<ExpenseFormValues>({
     resolver: zodResolver(expenseSchema),
     defaultValues: {
       date: new Date().toISOString().split('T')[0],
+      type: 'expense',
     }
   });
+
+  const type = watch('type');
 
   const onSubmit = async (data: ExpenseFormValues) => {
     try {
       const res = await fetch('/api/expenses', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify({
+          ...data,
+          amount: parseFloat(data.amount)
+        }),
       });
 
       if (res.ok) {
         const newExpense = await res.json();
         addExpense(newExpense);
-        toast.success('Expense added successfully!');
+        toast.success(`${data.type === 'income' ? 'Income' : 'Expense'} added successfully!`);
         reset();
         onSuccess();
         onClose();
       } else {
-        toast.error('Failed to add expense');
+        toast.error('Failed to add transaction');
       }
     } catch (error) {
       toast.error('An error occurred');
@@ -62,10 +70,33 @@ export function QuickAddExpense({ isOpen, onClose, onSuccess }: QuickAddExpenseP
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[425px] rounded-2xl">
         <DialogHeader>
-          <DialogTitle className="text-xl font-bold">Add New Expense</DialogTitle>
+          <DialogTitle className="text-xl font-bold">Add New Transaction</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)}>
           <div className="space-y-5 py-4">
+            <div className="flex p-1 bg-muted rounded-xl">
+              <button
+                type="button"
+                onClick={() => setValue('type', 'expense')}
+                className={cn(
+                  "flex-1 py-2 text-xs font-bold rounded-lg transition-all",
+                  type === 'expense' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                Expense
+              </button>
+              <button
+                type="button"
+                onClick={() => setValue('type', 'income')}
+                className={cn(
+                  "flex-1 py-2 text-xs font-bold rounded-lg transition-all",
+                  type === 'income' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                Income
+              </button>
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="amount" className="text-sm font-semibold">Amount ({settings.currency})</Label>
               <Input 
@@ -86,14 +117,27 @@ export function QuickAddExpense({ isOpen, onClose, onSuccess }: QuickAddExpenseP
                   <SelectValue placeholder="Select category" />
                 </SelectTrigger>
                 <SelectContent className="rounded-xl">
-                  {categories.map((cat) => (
-                    <SelectItem key={cat.id} value={cat.name}>
+                  {categories
+                    .filter(cat => {
+                      if (type === 'income') return cat.type === 'income' || cat.type === 'both';
+                      return cat.type === 'expense' || cat.type === 'both' || !cat.type;
+                    })
+                    .map((cat) => (
+                      <SelectItem key={cat.id} value={cat.name}>
+                        <div className="flex items-center gap-2">
+                          <div className="h-2 w-2 rounded-full" style={{ backgroundColor: cat.color }} />
+                          <span>{cat.name}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  {type === 'income' && categories.filter(c => c.type === 'income').length === 0 && (
+                    <SelectItem value="Income">
                       <div className="flex items-center gap-2">
-                        <div className="h-2 w-2 rounded-full" style={{ backgroundColor: cat.color }} />
-                        <span>{cat.name}</span>
+                        <div className="h-2 w-2 rounded-full bg-indigo-500" />
+                        <span>Income</span>
                       </div>
                     </SelectItem>
-                  ))}
+                  )}
                 </SelectContent>
               </Select>
               {errors.category && <p className="text-xs text-destructive font-medium">{errors.category.message}</p>}
@@ -103,7 +147,7 @@ export function QuickAddExpense({ isOpen, onClose, onSuccess }: QuickAddExpenseP
               <Label htmlFor="description" className="text-sm font-semibold">Description</Label>
               <Input 
                 id="description" 
-                placeholder="What did you spend on?" 
+                placeholder={type === 'income' ? "Where did this money come from?" : "What did you spend on?"}
                 className="rounded-xl bg-card border border-border shadow-sm h-11 focus:bg-background transition-all"
                 {...register('description')} 
               />
@@ -125,7 +169,7 @@ export function QuickAddExpense({ isOpen, onClose, onSuccess }: QuickAddExpenseP
           <DialogFooter className="gap-3">
             <Button type="button" variant="ghost" onClick={onClose} className="rounded-xl">Cancel</Button>
             <Button type="submit" disabled={isSubmitting} className="rounded-xl px-8 shadow-lg shadow-primary/20">
-              {isSubmitting ? 'Adding...' : 'Add Expense'}
+              {isSubmitting ? 'Adding...' : `Add ${type === 'income' ? 'Income' : 'Expense'}`}
             </Button>
           </DialogFooter>
         </form>

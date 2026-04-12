@@ -182,7 +182,7 @@ export default function Bills() {
                     </h3>
                     <div className="flex flex-wrap items-center gap-2 md:gap-3 mt-1">
                       <div className="flex items-center text-[10px] md:text-xs font-medium text-muted-foreground bg-muted px-2 py-0.5 md:py-1 rounded-lg">
-                        <CalendarIcon className="h-3 w-3 mr-1" />
+                        <CalendarIcon className="h-3 w-3 mr-1 text-primary" />
                         Due on {bill.dueDate}{bill.dueDate === 1 ? 'st' : bill.dueDate === 2 ? 'nd' : bill.dueDate === 3 ? 'rd' : 'th'}
                       </div>
                       <span className="text-xs md:text-sm font-bold text-foreground">

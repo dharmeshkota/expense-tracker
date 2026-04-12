@@ -1,13 +1,15 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useStore, Category } from '@/store/useStore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Plus, Trash2, Edit2, Tag, Check, X, Palette } from 'lucide-react';
+import { Plus, Trash2, Edit2, Tag, Check, X, Palette, ShieldAlert, TrendingUp, TrendingDown, HelpCircle } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const PRESET_COLORS = [
   '#ff4757', // vivid red
@@ -26,51 +28,74 @@ export default function Categories() {
   const { categories, addCategory, removeCategory, updateCategory } = useStore();
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
-  const [newName, setNewName] = useState('');
-  const [newColor, setNewColor] = useState(PRESET_COLORS[0]);
+  
+  const [newCategory, setNewCategory] = useState({
+    name: '',
+    color: PRESET_COLORS[0],
+    icon: 'Tag',
+    type: 'expense' as 'expense' | 'income' | 'both',
+    excludeFromBudget: false
+  });
 
-  const handleAdd = () => {
-    if (!newName.trim()) {
+  const handleAdd = async () => {
+    if (!newCategory.name.trim()) {
       toast.error('Category name is required');
       return;
     }
     
-    const newCat: Category = {
-      id: Math.random().toString(36).substr(2, 9),
-      name: newName.trim(),
-      icon: 'Tag',
-      color: newColor,
-    };
-    
-    addCategory(newCat);
-    toast.success('Category added successfully');
-    setNewName('');
-    setNewColor(PRESET_COLORS[0]);
-    setIsAddOpen(false);
+    try {
+      const res = await fetch('/api/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newCategory),
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        addCategory(data);
+        toast.success('Category added successfully');
+        setNewCategory({ name: '', color: PRESET_COLORS[0], icon: 'Tag', type: 'expense', excludeFromBudget: false });
+        setIsAddOpen(false);
+      }
+    } catch (error) {
+      toast.error('Failed to add category');
+    }
   };
 
-  const handleUpdate = () => {
-    if (!editingCategory || !newName.trim()) return;
+  const handleUpdate = async () => {
+    if (!editingCategory || !editingCategory.name.trim()) return;
     
-    updateCategory({
-      ...editingCategory,
-      name: newName.trim(),
-      color: newColor,
-    });
-    
-    toast.success('Category updated');
-    setEditingCategory(null);
-    setNewName('');
+    try {
+      const res = await fetch('/api/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editingCategory),
+      });
+      
+      if (res.ok) {
+        updateCategory(editingCategory);
+        toast.success('Category updated');
+        setEditingCategory(null);
+      }
+    } catch (error) {
+      toast.error('Failed to update category');
+    }
   };
 
-  const startEdit = (cat: Category) => {
-    setEditingCategory(cat);
-    setNewName(cat.name);
-    setNewColor(cat.color);
+  const handleDelete = async (id: string) => {
+    try {
+      const res = await fetch(`/api/categories/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        removeCategory(id);
+        toast.success('Category removed');
+      }
+    } catch (error) {
+      toast.error('Failed to remove category');
+    }
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       <div className="relative overflow-hidden rounded-3xl bg-primary/5 p-6 md:p-8 border border-primary/10">
         <div className="absolute top-0 right-0 -mt-4 -mr-4 h-32 w-32 rounded-full bg-primary/10 blur-3xl" />
         <div className="absolute bottom-0 left-0 -mb-4 -ml-4 h-24 w-24 rounded-full bg-primary/10 blur-2xl" />
@@ -83,7 +108,7 @@ export default function Categories() {
             </div>
             <h1 className="text-3xl md:text-4xl font-black tracking-tight text-foreground">Categories</h1>
             <p className="text-sm md:text-base text-muted-foreground max-w-md">
-              Customize how you organize your spending for better tracking.
+              Customize how you organize your spending for better tracking and budget management.
             </p>
           </div>
           
@@ -95,45 +120,84 @@ export default function Categories() {
               <Plus className="h-4 w-4" />
               <span>New Category</span>
             </Button>
-            <DialogContent className="rounded-2xl sm:max-w-[425px]">
+            <DialogContent className="rounded-2xl sm:max-w-md">
               <DialogHeader>
                 <DialogTitle className="text-xl font-bold">Create Category</DialogTitle>
               </DialogHeader>
               <div className="space-y-6 py-4">
                 <div className="space-y-2">
-                  <Label className="text-sm font-semibold">Category Name</Label>
+                  <Label className="text-sm font-bold">Category Name</Label>
                   <Input 
                     placeholder="e.g. Groceries, Rent, etc." 
-                    value={newName}
-                    onChange={(e) => setNewName(e.target.value)}
-                    className="rounded-xl bg-muted/50 border-none h-11"
+                    value={newCategory.name}
+                    onChange={(e) => setNewCategory({...newCategory, name: e.target.value})}
+                    className="rounded-xl bg-muted/50 border-none h-11 font-bold"
                   />
                 </div>
+
                 <div className="space-y-3">
-                  <Label className="text-sm font-semibold flex items-center gap-2">
-                    <Palette className="h-4 w-4 text-muted-foreground" />
+                  <Label className="text-sm font-bold flex items-center gap-2">
+                    <Palette className="h-4 w-4 text-primary" />
                     Pick a Color
                   </Label>
                   <div className="grid grid-cols-5 gap-3">
                     {PRESET_COLORS.map((color) => (
                       <button
                         key={color}
-                        onClick={() => setNewColor(color)}
+                        onClick={() => setNewCategory({...newCategory, color})}
                         className={cn(
                           "h-10 w-10 rounded-xl transition-all duration-200 flex items-center justify-center",
-                          newColor === color ? "ring-2 ring-primary ring-offset-2 scale-110" : "hover:scale-105"
+                          newCategory.color === color ? "ring-2 ring-primary ring-offset-2 scale-110" : "hover:scale-105"
                         )}
                         style={{ backgroundColor: color }}
                       >
-                        {newColor === color && <Check className="h-4 w-4 text-white" />}
+                        {newCategory.color === color && <Check className="h-4 w-4 text-white" />}
                       </button>
                     ))}
                   </div>
                 </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-bold">Type</Label>
+                    <Select value={newCategory.type} onValueChange={(v: any) => setNewCategory({...newCategory, type: v})}>
+                      <SelectTrigger className="rounded-xl h-11 bg-muted/50 border-none font-bold">
+                        <SelectValue>
+                          {newCategory.type.charAt(0).toUpperCase() + newCategory.type.slice(1)}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent className="rounded-xl">
+                        <SelectItem value="expense">Expense</SelectItem>
+                        <SelectItem value="income">Income</SelectItem>
+                        <SelectItem value="both">Both</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-bold">Custom Color</Label>
+                    <Input 
+                      type="color" 
+                      value={newCategory.color}
+                      onChange={(e) => setNewCategory({...newCategory, color: e.target.value})}
+                      className="h-11 p-1 rounded-xl cursor-pointer bg-muted/50 border-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between p-4 bg-primary/5 rounded-2xl border border-primary/10">
+                  <div className="space-y-0.5">
+                    <Label className="text-sm font-bold">Exclude from Budget</Label>
+                    <p className="text-[10px] text-muted-foreground font-medium">Transactions won't count towards monthly budget.</p>
+                  </div>
+                  <Switch 
+                    checked={newCategory.excludeFromBudget}
+                    onCheckedChange={(v) => setNewCategory({...newCategory, excludeFromBudget: v})}
+                  />
+                </div>
               </div>
               <DialogFooter>
                 <Button variant="ghost" onClick={() => setIsAddOpen(false)} className="rounded-xl">Cancel</Button>
-                <Button onClick={handleAdd} className="rounded-xl px-8 shadow-lg shadow-primary/20">Create</Button>
+                <Button onClick={handleAdd} className="rounded-xl px-8 shadow-lg shadow-primary/20 font-bold">Create</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -150,63 +214,121 @@ export default function Categories() {
                     className="h-12 w-12 rounded-2xl flex items-center justify-center text-white shadow-lg"
                     style={{ backgroundColor: cat.color }}
                   >
-                    <Tag className="h-6 w-6" />
+                    {cat.type === 'income' ? <TrendingUp className="h-6 w-6" /> : <Tag className="h-6 w-6" />}
                   </div>
                   <div>
-                    <h3 className="font-bold text-lg">{cat.name}</h3>
-                    <p className="text-xs text-muted-foreground uppercase tracking-wider font-bold">Category</p>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-bold text-lg">{cat.name}</h3>
+                        <span className={cn(
+                          "text-[10px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-md",
+                          cat.type === 'income' ? "bg-emerald-500/10 text-emerald-500" : 
+                          cat.type === 'both' ? "bg-blue-500/10 text-blue-500" : "bg-muted text-muted-foreground"
+                        )}>
+                          {cat.type ? cat.type.charAt(0).toUpperCase() + cat.type.slice(1) : 'Expense'}
+                        </span>
+                      </div>
+                    <div className="flex items-center gap-2 mt-1">
+                      {cat.excludeFromBudget && (
+                        <span className="flex items-center gap-1 text-[10px] font-bold text-orange-500">
+                          <ShieldAlert className="h-3 w-3" />
+                          Excluded from Budget
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <Dialog open={editingCategory?.id === cat.id} onOpenChange={(open) => !open && setEditingCategory(null)}>
-                    <Button variant="ghost" size="icon" onClick={() => startEdit(cat)} className="h-9 w-9 rounded-xl hover:bg-primary/10 hover:text-primary">
+                    <Button variant="ghost" size="icon" onClick={() => setEditingCategory(cat)} className="h-9 w-9 rounded-xl hover:bg-primary/10 hover:text-primary">
                       <Edit2 className="h-4 w-4" />
                     </Button>
-                    <DialogContent className="rounded-2xl sm:max-w-[425px]">
+                    <DialogContent className="rounded-2xl sm:max-w-md">
                       <DialogHeader>
                         <DialogTitle className="text-xl font-bold">Edit Category</DialogTitle>
                       </DialogHeader>
                       <div className="space-y-6 py-4">
                         <div className="space-y-2">
-                          <Label className="text-sm font-semibold">Category Name</Label>
+                          <Label className="text-sm font-bold">Category Name</Label>
                           <Input 
-                            value={newName}
-                            onChange={(e) => setNewName(e.target.value)}
-                            className="rounded-xl bg-muted/50 border-none h-11"
+                            value={editingCategory?.name}
+                            onChange={(e) => setEditingCategory(editingCategory ? {...editingCategory, name: e.target.value} : null)}
+                            className="rounded-xl bg-muted/50 border-none h-11 font-bold"
                           />
                         </div>
+
                         <div className="space-y-3">
-                          <Label className="text-sm font-semibold flex items-center gap-2">
-                            <Palette className="h-4 w-4 text-muted-foreground" />
+                          <Label className="text-sm font-bold flex items-center gap-2">
+                            <Palette className="h-4 w-4 text-primary" />
                             Update Color
                           </Label>
                           <div className="grid grid-cols-5 gap-3">
                             {PRESET_COLORS.map((color) => (
                               <button
                                 key={color}
-                                onClick={() => setNewColor(color)}
+                                onClick={() => setEditingCategory(editingCategory ? {...editingCategory, color} : null)}
                                 className={cn(
                                   "h-10 w-10 rounded-xl transition-all duration-200 flex items-center justify-center",
-                                  newColor === color ? "ring-2 ring-primary ring-offset-2 scale-110" : "hover:scale-105"
+                                  editingCategory?.color === color ? "ring-2 ring-primary ring-offset-2 scale-110" : "hover:scale-105"
                                 )}
                                 style={{ backgroundColor: color }}
                               >
-                                {newColor === color && <Check className="h-4 w-4 text-white" />}
+                                {editingCategory?.color === color && <Check className="h-4 w-4 text-white" />}
                               </button>
                             ))}
                           </div>
                         </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label className="text-sm font-bold">Type</Label>
+                            <Select 
+                              value={editingCategory?.type || 'expense'} 
+                              onValueChange={(v: any) => setEditingCategory(editingCategory ? {...editingCategory, type: v} : null)}
+                            >
+                              <SelectTrigger className="rounded-xl h-11 bg-muted/50 border-none font-bold">
+                                <SelectValue placeholder="Select type">
+                                  {editingCategory?.type ? editingCategory.type.charAt(0).toUpperCase() + editingCategory.type.slice(1) : 'Expense'}
+                                </SelectValue>
+                              </SelectTrigger>
+                              <SelectContent className="rounded-xl">
+                                <SelectItem value="expense">Expense</SelectItem>
+                                <SelectItem value="income">Income</SelectItem>
+                                <SelectItem value="both">Both</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-sm font-bold">Custom Color</Label>
+                            <Input 
+                              type="color" 
+                              value={editingCategory?.color}
+                              onChange={(e) => setEditingCategory(editingCategory ? {...editingCategory, color: e.target.value} : null)}
+                              className="h-11 p-1 rounded-xl cursor-pointer bg-muted/50 border-none"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between p-4 bg-primary/5 rounded-2xl border border-primary/10">
+                          <div className="space-y-0.5">
+                            <Label className="text-sm font-bold">Exclude from Budget</Label>
+                            <p className="text-[10px] text-muted-foreground font-medium">Transactions won't count towards monthly budget.</p>
+                          </div>
+                          <Switch 
+                            checked={!!editingCategory?.excludeFromBudget}
+                            onCheckedChange={(v) => setEditingCategory(editingCategory ? {...editingCategory, excludeFromBudget: v} : null)}
+                          />
+                        </div>
                       </div>
                       <DialogFooter>
                         <Button variant="ghost" onClick={() => setEditingCategory(null)} className="rounded-xl">Cancel</Button>
-                        <Button onClick={handleUpdate} className="rounded-xl px-8 shadow-lg shadow-primary/20">Save Changes</Button>
+                        <Button onClick={handleUpdate} className="rounded-xl px-8 shadow-lg shadow-primary/20 font-bold">Save Changes</Button>
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
                   <Button 
                     variant="ghost" 
                     size="icon" 
-                    onClick={() => removeCategory(cat.id)}
+                    onClick={() => handleDelete(cat.id)}
                     className="h-9 w-9 rounded-xl hover:bg-destructive/10 hover:text-destructive"
                   >
                     <Trash2 className="h-4 w-4" />

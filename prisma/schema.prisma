@@ -10,10 +10,12 @@ model User {
   id            String          @id @default(cuid())
   name          String?
   email         String?         @unique
+  password      String?
   image         String?
   expenses      Expense[]
   recurringBills RecurringBill[]
   budgets       Budget[]
+  categories    Category[]
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 }
@@ -23,12 +25,28 @@ model Expense {
   amount      Float
   category    String
   description String?
+  type        String   @default("expense") // "expense" or "income"
   date        DateTime @default(now())
   receiptUrl  String?
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+model Category {
+  id                String   @id @default(cuid())
+  name              String
+  icon              String
+  color             String
+  excludeFromBudget Boolean  @default(false)
+  type              String   @default("expense") // "expense", "income", or "both"
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([userId, name])
 }
 
 model RecurringBill {
