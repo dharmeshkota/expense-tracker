@@ -208,7 +208,7 @@ export default function Transactions() {
   };
 
   return (
-    <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500 pb-24 md:pb-0">
+    <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500 pb-10 md:pb-0">
       <div className="relative overflow-hidden rounded-3xl bg-primary/5 p-6 md:p-8 border border-primary/10">
         <div className="absolute top-0 right-0 -mt-4 -mr-4 h-32 w-32 rounded-full bg-primary/10 blur-3xl" />
         <div className="absolute bottom-0 left-0 -mb-4 -ml-4 h-24 w-24 rounded-full bg-primary/10 blur-2xl" />
@@ -411,7 +411,7 @@ export default function Transactions() {
         </div>
 
         {/* Mobile List View */}
-        <div className="md:hidden divide-y">
+        <div className="md:hidden divide-y w-full">
           {isLoading ? (
             Array.from({ length: 5 }).map((_, i) => (
               <div key={i} className="px-2 py-3 flex items-center justify-between gap-2">
@@ -430,7 +430,7 @@ export default function Transactions() {
               const category = categories.find(c => c.name === expense.category);
               const isIncome = expense.type === 'income';
               return (
-                <div key={`${expense.id}-${index}`} className="px-2 py-3 md:p-4 flex items-center justify-between active:bg-muted/50 transition-colors gap-2 md:gap-3">
+                <div key={`${expense.id}-${index}`} className="px-1.5 py-3 md:p-4 flex items-center justify-between active:bg-muted/50 transition-colors gap-1.5 md:gap-3 cursor-pointer">
                   <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
                     <div 
                       className="h-8 w-8 md:h-10 md:w-10 rounded-xl flex items-center justify-center text-white shadow-sm shrink-0"
@@ -440,8 +440,8 @@ export default function Transactions() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="font-bold truncate text-xs md:text-base leading-tight">{expense.description}</p>
-                      <div className="flex items-center gap-1.5 md:gap-2 text-[9px] md:text-xs text-muted-foreground mt-0.5">
-                        <span className="font-medium truncate max-w-[50px] md:max-w-[100px]">{expense.category}</span>
+                      <div className="flex items-center gap-1 md:gap-2 text-[9px] md:text-xs text-muted-foreground mt-0.5">
+                        <span className="font-medium truncate max-w-[40px] md:max-w-[100px]">{expense.category}</span>
                         <span>•</span>
                         <span className="shrink-0">{format(new Date(expense.date), 'MMM dd')}</span>
                       </div>
@@ -454,7 +454,7 @@ export default function Transactions() {
                     <button 
                       onClick={() => handleDelete(expense.id)}
                       disabled={deleteMutation.isPending}
-                      className="p-1.5 md:p-2 text-muted-foreground hover:text-destructive active:bg-destructive/10 rounded-lg transition-colors disabled:opacity-50"
+                      className="p-1 md:p-2 text-muted-foreground hover:text-destructive active:bg-destructive/10 rounded-lg transition-colors disabled:opacity-50"
                     >
                       {deleteMutation.isPending && deleteMutation.variables === expense.id ? <Loader2 className="h-3.5 w-3.5 md:h-4 md:w-4 animate-spin" /> : <Trash2 className="h-3.5 w-3.5 md:h-4 md:w-4" />}
                     </button>

@@ -1,7 +1,13 @@
-import { Home, PieChart, Receipt, Settings, LogOut, Wallet, LayoutDashboard, BarChart3, Tag, Users } from 'lucide-react';
+import { Home, PieChart, Receipt, Settings, LogOut, Wallet, LayoutDashboard, BarChart3, Tag, Users, MoreHorizontal } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useStore } from '@/store/useStore';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const navItems = [
   { icon: LayoutDashboard, label: 'Dashboard', href: '/' },
@@ -15,10 +21,15 @@ const navItems = [
 
 export function BottomNav() {
   const location = useLocation();
+  
+  // Main items to show directly in the bar
+  const mainItems = navItems.slice(0, 4);
+  // Items to hide under the "More" menu
+  const moreItems = navItems.slice(4);
 
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-card border-t h-16 flex items-center justify-around px-4 z-50">
-      {navItems.map((item) => {
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-card/80 backdrop-blur-lg border-t h-16 flex items-center justify-around px-2 z-50">
+      {mainItems.map((item) => {
         const Icon = item.icon;
         const isActive = location.pathname === item.href;
         return (
@@ -26,15 +37,42 @@ export function BottomNav() {
             key={item.href}
             to={item.href}
             className={cn(
-              "flex flex-col items-center justify-center space-y-1 transition-colors",
-              isActive ? "text-primary" : "text-muted-foreground"
+              "flex flex-col items-center justify-center flex-1 py-1 space-y-1 transition-all rounded-xl",
+              isActive ? "text-primary scale-110" : "text-muted-foreground hover:text-foreground"
             )}
           >
-            <Icon className="h-5 w-5" />
-            <span className="text-[10px] font-medium">{item.label}</span>
+            <Icon className={cn("h-5 w-5", isActive && "fill-current/10")} />
+            <span className="text-[10px] font-bold">{item.label}</span>
           </Link>
         );
       })}
+      
+      <DropdownMenu>
+        <DropdownMenuTrigger className="flex flex-col items-center justify-center flex-1 py-1 space-y-1 text-muted-foreground outline-none border-none bg-transparent cursor-pointer">
+          <MoreHorizontal className="h-5 w-5" />
+          <span className="text-[10px] font-bold">More</span>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" side="top" className="w-48 p-2 rounded-2xl mb-2 ml-2 shadow-xl border-muted bg-card/95 backdrop-blur-md overflow-hidden">
+          {moreItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = location.pathname === item.href;
+            return (
+              <DropdownMenuItem key={item.href} className="p-0">
+                <Link
+                  to={item.href}
+                  className={cn(
+                    "flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors w-full",
+                    isActive ? "bg-primary text-primary-foreground font-bold" : "hover:bg-muted"
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                  <span className="text-sm">{item.label}</span>
+                </Link>
+              </DropdownMenuItem>
+            );
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </nav>
   );
 }
@@ -46,10 +84,13 @@ export function Sidebar() {
   return (
     <aside className="hidden md:flex flex-col w-64 border-r bg-card h-screen sticky top-0">
       <div className="p-6 flex items-center space-x-3">
-        <div className="h-8 w-8 bg-primary rounded-lg flex items-center justify-center">
-          <Wallet className="h-5 w-5 text-primary-foreground" />
+        <div className="h-10 w-10 bg-gradient-to-br from-primary to-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-primary/20">
+          <Wallet className="h-6 w-6 text-primary-foreground" />
         </div>
-        <h1 className="text-xl font-bold tracking-tight text-foreground">ExpenseFlow</h1>
+        <div className="flex flex-col">
+          <h1 className="text-xl font-black tracking-tight text-foreground leading-none">ExpensePro</h1>
+          <span className="text-[10px] font-bold text-primary uppercase tracking-widest mt-1">Smart Tracking</span>
+        </div>
       </div>
 
       {user && (

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { useStore } from '@/store/useStore';
 import { StatCard } from '@/components/dashboard/StatCard';
 import { Wallet, TrendingUp, Calendar as CalendarIcon, CreditCard, Plus, Search, Filter, LayoutDashboard, TrendingDown, Loader2 } from 'lucide-react';
@@ -379,7 +380,9 @@ export default function Dashboard() {
           <div className="bg-card border rounded-2xl p-6 shadow-sm">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-lg font-bold">Recent Transactions</h3>
-              <Button variant="ghost" size="sm" className="text-xs font-bold text-primary hover:bg-primary/10">View All</Button>
+              <Link to="/transactions">
+                <Button variant="ghost" size="sm" className="text-xs font-bold text-primary hover:bg-primary/10">View All</Button>
+              </Link>
             </div>
             <div className="space-y-4">
               {isLoading ? (

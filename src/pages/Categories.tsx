@@ -63,19 +63,24 @@ export default function Categories() {
       return;
     }
     
+    // Close immediately
+    setIsAddOpen(false);
+    const categoryToSave = { ...newCategory };
+    setNewCategory({ name: '', color: PRESET_COLORS[0], icon: 'Tag', type: 'expense', excludeFromBudget: false });
+
     try {
       const res = await fetch('/api/categories', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newCategory),
+        body: JSON.stringify(categoryToSave),
       });
       
       if (res.ok) {
         const data = await res.json();
         addCategory(data);
         toast.success('Category added successfully');
-        setNewCategory({ name: '', color: PRESET_COLORS[0], icon: 'Tag', type: 'expense', excludeFromBudget: false });
-        setIsAddOpen(false);
+      } else {
+        toast.error('Failed to add category');
       }
     } catch (error) {
       toast.error('Failed to add category');
@@ -85,17 +90,21 @@ export default function Categories() {
   const handleUpdate = async () => {
     if (!editingCategory || !editingCategory.name.trim()) return;
     
+    const categoryToUpdate = { ...editingCategory };
+    setEditingCategory(null);
+
     try {
       const res = await fetch('/api/categories', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editingCategory),
+        body: JSON.stringify(categoryToUpdate),
       });
       
       if (res.ok) {
-        updateCategory(editingCategory);
+        updateCategory(categoryToUpdate);
         toast.success('Category updated');
-        setEditingCategory(null);
+      } else {
+        toast.error('Failed to update category');
       }
     } catch (error) {
       toast.error('Failed to update category');
@@ -103,13 +112,22 @@ export default function Categories() {
   };
 
   const handleDelete = async (id: string) => {
+    if (!confirm('Are you sure? Removing a category will label related transactions as "Uncategorized".')) return;
+    
+    // Optimistic UI
+    const oldCategories = [...categories];
+    removeCategory(id);
+
     try {
       const res = await fetch(`/api/categories/${id}`, { method: 'DELETE' });
       if (res.ok) {
-        removeCategory(id);
         toast.success('Category removed');
+      } else {
+        setCategories(oldCategories);
+        toast.error('Failed to remove category');
       }
     } catch (error) {
+      setCategories(oldCategories);
       toast.error('Failed to remove category');
     }
   };
@@ -145,7 +163,7 @@ export default function Categories() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+    <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
       <div className="relative overflow-hidden rounded-3xl bg-primary/5 p-6 md:p-8 border border-primary/10">
         <div className="absolute top-0 right-0 -mt-4 -mr-4 h-32 w-32 rounded-full bg-primary/10 blur-3xl" />
         <div className="absolute bottom-0 left-0 -mb-4 -ml-4 h-24 w-24 rounded-full bg-primary/10 blur-2xl" />

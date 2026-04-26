@@ -33,10 +33,7 @@ function App() {
         // Add a small delay for the very first check to avoid "Failed to fetch" on cold start
         await new Promise(resolve => setTimeout(resolve, 100));
         
-        // Update this specific line inside App.tsx:
-       const res = await fetch('/api/auth/me', {
-        credentials: 'include'
-      });
+        const res = await fetch('/api/auth/me');
         if (res.ok) {
           const data = await res.json();
           setUser(data);
@@ -83,10 +80,10 @@ function App() {
 
   return (
     <Router>
-      <div className="flex min-h-screen bg-background font-sans selection:bg-primary/10 selection:text-primary">
+      <div className="flex min-h-screen bg-background font-sans selection:bg-primary/10 selection:text-primary overflow-x-hidden">
         <Sidebar />
-        <main className="flex-1 md:pl-0 pb-20 md:pb-0 min-h-screen">
-          <div className="max-w-7xl mx-auto p-3 md:p-8 lg:p-12">
+        <main className="flex-1 md:pl-0 pb-16 md:pb-0 min-h-screen">
+          <div className="max-w-7xl mx-auto p-4 md:p-8 lg:p-12">
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/transactions" element={<Transactions />} />

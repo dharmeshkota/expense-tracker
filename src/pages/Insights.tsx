@@ -5,7 +5,7 @@ import { Download, Calendar, Filter, TrendingUp, TrendingDown, Wallet, CreditCar
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import html2canvas from 'html2canvas';
+import { toPng } from 'html-to-image';
 import { format, startOfMonth, endOfMonth, subMonths, isWithinInterval } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
@@ -129,63 +129,46 @@ export default function Insights() {
         styles: { font: 'helvetica' }
       });
 
-      // Capture Chart
+      // Capture Chart using html-to-image
       if (chartRef.current) {
-        const canvas = await html2canvas(chartRef.current, {
-          scale: 2,
-          backgroundColor: '#ffffff',
-          logging: false,
-          useCORS: true,
-          onclone: (clonedDoc) => {
-            // 1. Sanitize all <style> tags to remove unsupported color spaces
-            // This prevents html2canvas's internal CSS parser from crashing
-            const styleTags = clonedDoc.querySelectorAll('style');
-            styleTags.forEach(style => {
-              if (style.innerHTML && style.innerHTML.includes('okl')) {
-                // Safely replace oklab(...) and oklch(...) with your primary hex color
-                style.innerHTML = style.innerHTML.replace(/okl(?:ab|ch)\([^;}]+\)/g, '#6366f1');
-              }
-            });
-
-            const elements = clonedDoc.getElementsByTagName('*');
-            
-            for (let i = 0; i < elements.length; i++) {
-              const el = elements[i] as HTMLElement;
-              
-              // 2. Sanitize inline style attributes before the parser reads them
-              const inlineStyle = el.getAttribute('style');
-              if (inlineStyle && inlineStyle.includes('okl')) {
-                el.setAttribute('style', inlineStyle.replace(/okl(?:ab|ch)\([^;}]+\)/g, '#6366f1'));
-              }
-
-              // 3. Handle SVG attributes
-              const fill = el.getAttribute('fill');
-              if (fill && fill.includes('okl')) el.setAttribute('fill', '#6366f1');
-              
-              const stroke = el.getAttribute('stroke');
-              if (stroke && stroke.includes('okl')) el.setAttribute('stroke', '#6366f1');
-
-              // 4. Fallback for computed styles
-              try {
-                const style = window.getComputedStyle(el);
-                if (style.backgroundColor.includes('okl')) el.style.setProperty('background-color', '#6366f1', 'important');
-                if (style.color.includes('okl')) el.style.setProperty('color', '#6366f1', 'important');
-                if (style.borderColor.includes('okl')) el.style.setProperty('border-color', '#6366f1', 'important');
-                if (style.fill.includes('okl')) el.style.setProperty('fill', '#6366f1', 'important');
-                if (style.stroke.includes('okl')) el.style.setProperty('stroke', '#6366f1', 'important');
-              } catch (e) {
-                // Ignore computed style errors
-              }
-            }
-          }
+        const imgData = await toPng(chartRef.current, {
+          cacheBust: true,
+          // Optional: Match the background to your theme to prevent visual gaps
+          backgroundColor: document.documentElement.classList.contains('dark') ? '#020817' : '#ffffff',
+          pixelRatio: 2,
         });
-        const imgData = canvas.toDataURL('image/png');
-        const imgProps = doc.getImageProperties(imgData);
-        const pdfWidth = doc.internal.pageSize.getWidth() - 40;
-        const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
         
-        doc.text('Spending by Category', 20, (doc as any).lastAutoTable.finalY + 15);
-        doc.addImage(imgData, 'PNG', 20, (doc as any).lastAutoTable.finalY + 20, pdfWidth, pdfHeight);
+        const imgProps = doc.getImageProperties(imgData);
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const pageHeight = doc.internal.pageSize.getHeight();
+        const margin = 20;
+        
+        // Initial desired dimensions (full width minus margins)
+        let pdfWidth = pageWidth - (margin * 2);
+        let pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+        
+        let startY = (doc as any).lastAutoTable.finalY + 20;
+
+        // If the image is too tall to fit on the rest of the first page...
+        if (startY + pdfHeight > pageHeight - margin) {
+          // 1. Move it to a brand new page
+          doc.addPage();
+          startY = margin + 10;
+          
+          // 2. If it's STILL too tall for a full page (happens on mobile layouts), scale it down
+          const maxAvailableHeight = pageHeight - startY - margin;
+          if (pdfHeight > maxAvailableHeight) {
+            pdfHeight = maxAvailableHeight;
+            // Proportionately scale the width down too
+            pdfWidth = (imgProps.width * pdfHeight) / imgProps.height;
+          }
+        }
+        
+        // Center horizontally in case we scaled it down
+        const xPos = (pageWidth - pdfWidth) / 2;
+        
+        doc.text('Spending by Category', margin, startY - 5);
+        doc.addImage(imgData, 'PNG', xPos, startY, pdfWidth, pdfHeight);
         
         // Detailed Transactions on new page
         doc.addPage();
@@ -219,7 +202,7 @@ export default function Insights() {
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
       <div className="relative overflow-hidden rounded-3xl bg-primary/5 p-6 md:p-8 border border-primary/10">
         <div className="absolute top-0 right-0 -mt-4 -mr-4 h-32 w-32 rounded-full bg-primary/10 blur-3xl" />
         <div className="absolute bottom-0 left-0 -mb-4 -ml-4 h-24 w-24 rounded-full bg-primary/10 blur-2xl" />
@@ -367,7 +350,7 @@ export default function Insights() {
             </CardTitle>
             <CardDescription>Your highest expense areas for this period.</CardDescription>
           </CardHeader>
-          <CardContent className="pt-4">
+          <CardContent className="pt-4 pb-8">
             <div className="space-y-6">
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (

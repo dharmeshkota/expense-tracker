@@ -32,12 +32,14 @@ type BillFormValues = z.infer<typeof billSchema>;
 export default function Bills() {
   const { bills, setBills, addBill, toggleBillPaid, settings } = useStore();
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   const { register, handleSubmit, formState: { errors, isSubmitting }, reset } = useForm<BillFormValues>({
     resolver: zodResolver(billSchema),
   });
 
   const fetchBills = async () => {
+    setIsLoading(true);
     try {
       const res = await fetch('/api/bills');
       if (res.ok) {
@@ -46,6 +48,8 @@ export default function Bills() {
       }
     } catch (error) {
       console.error('Failed to fetch bills:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -54,6 +58,9 @@ export default function Bills() {
   }, []);
 
   const handleTogglePaid = async (id: string, currentStatus: boolean) => {
+    // Optimistic update
+    toggleBillPaid(id);
+    
     try {
       const res = await fetch(`/api/bills/${id}`, {
         method: 'PATCH',
@@ -61,23 +68,36 @@ export default function Bills() {
         body: JSON.stringify({ isPaid: !currentStatus }),
       });
 
-      if (res.ok) {
+      if (!res.ok) {
+        // Rollback on error
         toggleBillPaid(id);
+        toast.error('Failed to update bill');
+      } else {
         toast.success(currentStatus ? 'Marked as unpaid' : 'Bill paid!');
       }
     } catch (error) {
+      toggleBillPaid(id);
       toast.error('Failed to update bill');
     }
   };
 
   const deleteBill = async (id: string) => {
+    if (!confirm('Delete this bill?')) return;
+    
+    // Optimistic UI
+    const oldBills = [...bills];
+    setBills(bills.filter(b => b.id !== id));
+
     try {
       const res = await fetch(`/api/bills/${id}`, { method: 'DELETE' });
       if (res.ok) {
-        setBills(bills.filter(b => b.id !== id));
         toast.success('Bill deleted');
+      } else {
+        setBills(oldBills);
+        toast.error('Failed to delete bill');
       }
     } catch (error) {
+      setBills(oldBills);
       toast.error('Failed to delete bill');
     }
   };
@@ -92,6 +112,10 @@ export default function Bills() {
       isPaid: false
     };
 
+    // Close immediately for 'instant' feel
+    setIsAddOpen(false);
+    reset();
+
     try {
       const res = await fetch('/api/bills', {
         method: 'POST',
@@ -103,8 +127,8 @@ export default function Bills() {
         const newBill = await res.json();
         addBill(newBill);
         toast.success('Bill added successfully');
-        reset();
-        setIsAddOpen(false);
+      } else {
+        toast.error('Failed to add bill');
       }
     } catch (error) {
       toast.error('Failed to add bill');
@@ -115,7 +139,7 @@ export default function Bills() {
   const unpaidUpcoming = bills.filter(b => !b.isPaid && b.dueDate >= today && b.dueDate <= today + 5);
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="space-y-8 animate-in fade-in duration-500 pb-10">
       <div className="relative overflow-hidden rounded-3xl bg-primary/5 p-6 md:p-8 border border-primary/10">
         <div className="absolute top-0 right-0 -mt-4 -mr-4 h-32 w-32 rounded-full bg-primary/10 blur-3xl" />
         <div className="absolute bottom-0 left-0 -mb-4 -ml-4 h-24 w-24 rounded-full bg-primary/10 blur-2xl" />
@@ -155,7 +179,11 @@ export default function Bills() {
       )}
 
       <div className="grid gap-4">
-        {bills.length > 0 ? (
+        {isLoading ? (
+          Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="h-24 rounded-2xl bg-muted animate-pulse" />
+          ))
+        ) : bills.length > 0 ? (
           bills.map((bill) => (
             <Card key={bill.id} className={cn(
               "border-none shadow-sm transition-all duration-200 rounded-2xl overflow-hidden",
