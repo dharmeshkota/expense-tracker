@@ -30,13 +30,13 @@ export function setupRoutes(app: Express) {
     }
 
     const [expenses, total] = await prisma.$transaction([
-      (prisma.expense as any).findMany({
+      prisma.expense.findMany({
         where,
         orderBy: { date: 'desc' },
         skip: (p - 1) * l,
         take: l,
       }),
-      (prisma.expense as any).count({ where }),
+      prisma.expense.count({ where }),
     ]);
 
     res.json({
@@ -52,7 +52,7 @@ export function setupRoutes(app: Express) {
 
   app.post('/api/expenses', isAuthenticated, async (req: any, res) => {
     const { amount, category, description, date, type = 'expense' } = req.body;
-    const expense = await (prisma.expense as any).create({
+    const expense = await prisma.expense.create({
       data: {
         amount: parseFloat(amount),
         category,
@@ -78,7 +78,7 @@ export function setupRoutes(app: Express) {
     try {
       const { id, name, icon, color, excludeFromBudget, type = 'expense' } = req.body;
       
-      const category = await (prisma.category as any).upsert({
+      const category = await prisma.category.upsert({
         where: id ? { id } : {
           userId_name: {
             userId: req.user.id,
@@ -89,14 +89,14 @@ export function setupRoutes(app: Express) {
           icon, 
           color, 
           excludeFromBudget: Boolean(excludeFromBudget), 
-          type: type 
+          type: type as string
         },
         create: {
           name,
           icon,
           color,
           excludeFromBudget: Boolean(excludeFromBudget),
-          type: type,
+          type: type as string,
           userId: req.user.id,
         },
       });
@@ -320,5 +320,173 @@ export function setupRoutes(app: Express) {
       console.error('Reset data error:', error);
       res.status(500).json({ error: 'Failed to reset data' });
     }
+  });
+
+  // Group Routes
+  app.get('/api/groups', isAuthenticated, async (req: any, res) => {
+    const groups = await prisma.group.findMany({
+      where: {
+        members: {
+          some: { userId: req.user.id }
+        }
+      },
+      include: {
+        members: {
+          include: {
+            user: {
+              select: { id: true, name: true, email: true, image: true }
+            }
+          }
+        },
+        owner: {
+          select: { id: true, name: true, email: true }
+        }
+      },
+      orderBy: { updatedAt: 'desc' }
+    });
+    res.json(groups);
+  });
+
+  app.post('/api/groups', isAuthenticated, async (req: any, res) => {
+    const { name, description } = req.body;
+    const group = await prisma.group.create({
+      data: {
+        name,
+        description,
+        ownerId: req.user.id,
+        members: {
+          create: { userId: req.user.id }
+        }
+      },
+      include: {
+        members: {
+          include: {
+            user: {
+              select: { id: true, name: true, email: true, image: true }
+            }
+          }
+        }
+      }
+    });
+    res.json(group);
+  });
+
+  app.get('/api/users/search', isAuthenticated, async (req: any, res) => {
+    const { email } = req.query;
+    if (!email || (email as string).length < 3) return res.json([]);
+    
+    const users = await prisma.user.findMany({
+      where: {
+        email: { contains: email as string, mode: 'insensitive' },
+        NOT: { id: req.user.id }
+      },
+      select: { id: true, name: true, email: true, image: true },
+      take: 5
+    });
+    res.json(users);
+  });
+
+  app.post('/api/groups/:id/members', isAuthenticated, async (req: any, res) => {
+    const { userId } = req.body;
+    const groupId = req.params.id;
+    
+    // Check if requester is owner
+    const group = await prisma.group.findUnique({
+      where: { id: groupId }
+    });
+
+    if (!group || group.ownerId !== req.user.id) {
+      return res.status(403).json({ error: 'Only group owner can add members' });
+    }
+
+    try {
+      const member = await prisma.groupMember.create({
+        data: { groupId, userId },
+        include: {
+          user: {
+            select: { id: true, name: true, email: true, image: true }
+          }
+        }
+      });
+      res.json(member);
+    } catch (error) {
+      res.status(400).json({ error: 'User is already a member' });
+    }
+  });
+
+  app.post('/api/groups/:id/split', isAuthenticated, async (req: any, res) => {
+    const { amount, description, category, date, memberIds } = req.body;
+    const groupId = req.params.id;
+    
+    const totalAmount = parseFloat(amount);
+    const splitCount = memberIds.length;
+    const individualAmount = totalAmount / splitCount;
+
+    try {
+      const expenses = await prisma.$transaction(
+        memberIds.map((userId: string) => 
+          prisma.expense.create({
+            data: {
+              amount: individualAmount,
+              description: `${description} (Split)`,
+              category,
+              date: new Date(date),
+              userId,
+              groupId,
+              type: 'expense'
+            }
+          })
+        )
+      );
+      res.json(expenses);
+    } catch (error) {
+      console.error('Split error:', error);
+      res.status(500).json({ error: 'Failed to create split expenses' });
+    }
+  });
+
+  app.delete('/api/groups/:id', isAuthenticated, async (req: any, res) => {
+    const groupId = req.params.id;
+    const group = await prisma.group.findUnique({ where: { id: groupId } });
+
+    if (!group) return res.status(404).json({ error: 'Group not found' });
+    if (group.ownerId !== req.user.id) return res.status(403).json({ error: 'Only owner can delete group' });
+
+    await prisma.group.delete({ where: { id: groupId } });
+    res.json({ success: true });
+  });
+
+  app.delete('/api/groups/:id/members/:userId', isAuthenticated, async (req: any, res) => {
+    const groupId = req.params.id;
+    const targetUserId = req.params.userId;
+    
+    const group = await prisma.group.findUnique({
+      where: { id: groupId },
+      include: { members: true }
+    });
+
+    if (!group) return res.status(404).json({ error: 'Group not found' });
+
+    const isOwner = group.ownerId === req.user.id;
+    const isSelf = targetUserId === req.user.id;
+
+    if (!isOwner && !isSelf) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    if (isSelf && isOwner && group.members.length > 1) {
+       return res.status(400).json({ error: 'Owner cannot leave group if other members exist. Transfer ownership or delete group.' });
+    }
+
+    await prisma.groupMember.delete({
+      where: {
+        groupId_userId: {
+          groupId,
+          userId: targetUserId
+        }
+      }
+    });
+
+    res.json({ success: true });
   });
 }

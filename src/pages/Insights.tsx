@@ -83,10 +83,15 @@ export default function Insights() {
     if (!stats) return;
     setIsExporting(true);
     try {
+      const [year, month] = timeframe.split('-');
+      const res = await fetch(`/api/expenses?month=${month}&year=${year}&limit=10000`);
+      if (!res.ok) throw new Error('Failed to fetch full data for report');
+      const data = await res.json();
+      const allExpenses = data.expenses;
+
       const doc = new jsPDF('p', 'mm', 'a4');
       const now = new Date();
-      const [year, month] = timeframe.split('-').map(Number);
-      const targetDate = new Date(year, month - 1, 1);
+      const targetDate = new Date(parseInt(year), parseInt(month) - 1, 1);
       const monthName = format(targetDate, 'MMMM yyyy');
 
       // Header
@@ -95,79 +100,81 @@ export default function Insights() {
       
       doc.setFontSize(24);
       doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
       doc.text('Financial Insights Report', 20, 25);
       
       doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
       doc.text(`${monthName} | Generated on ${format(now, 'PPP p')}`, 20, 32);
 
       // Summary Stats
       doc.setTextColor(0, 0, 0);
       doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
       doc.text('Financial Summary', 20, 55);
       
       autoTable(doc, {
         startY: 60,
         head: [['Metric', 'Value']],
         body: [
-          ['Total Income', formatCurrencyForPDF((stats.totalSalary || 0) + (stats.totalIncome || 0), settings.currency)],
-          ['Total Expenses', formatCurrencyForPDF(stats.totalSpent, settings.currency)],
+          ['Total Income', formatCurrencyForPDF(allExpenses.filter((e: any) => e.type === 'income').reduce((sum: number, e: any) => sum + e.amount, 0) + (stats.totalSalary || 0), settings.currency)],
+          ['Total Expenses', formatCurrencyForPDF(allExpenses.filter((e: any) => e.type === 'expense').reduce((sum: number, e: any) => sum + e.amount, 0), settings.currency)],
           ['Budget Spent', formatCurrencyForPDF(stats.budgetSpent, settings.currency)],
           ['Remaining Balance', formatCurrencyForPDF(stats.remaining, settings.currency)],
           ['Budget Utilization', `${((stats.budgetSpent / settings.monthlyBudget) * 100).toFixed(1)}%`],
         ],
         theme: 'striped',
-        headStyles: { fillColor: [0, 122, 255] },
-        margin: { left: 20, right: 20 }
+        headStyles: { fillColor: [99, 102, 241] },
+        margin: { left: 20, right: 20 },
+        styles: { font: 'helvetica' }
       });
 
       // Capture Chart
       if (chartRef.current) {
         const canvas = await html2canvas(chartRef.current, {
-          scale: 3, // Increased scale for better quality
+          scale: 2,
           backgroundColor: '#ffffff',
           logging: false,
           useCORS: true,
           onclone: (clonedDoc) => {
-            // Fix for oklab/oklch error in html2canvas
+            // 1. Sanitize all <style> tags to remove unsupported color spaces
+            // This prevents html2canvas's internal CSS parser from crashing
+            const styleTags = clonedDoc.querySelectorAll('style');
+            styleTags.forEach(style => {
+              if (style.innerHTML && style.innerHTML.includes('okl')) {
+                // Safely replace oklab(...) and oklch(...) with your primary hex color
+                style.innerHTML = style.innerHTML.replace(/okl(?:ab|ch)\([^;}]+\)/g, '#6366f1');
+              }
+            });
+
             const elements = clonedDoc.getElementsByTagName('*');
             
-            // Helper to convert any color to RGB using a temporary canvas
-            const toRgb = (color: string) => {
-              if (!color || color === 'transparent' || color === 'inherit') return color;
-              if (color.startsWith('rgb')) return color;
-              
-              try {
-                const canvas = document.createElement('canvas');
-                canvas.width = 1;
-                canvas.height = 1;
-                const ctx = canvas.getContext('2d');
-                if (!ctx) return '#000000';
-                ctx.fillStyle = color;
-                ctx.fillRect(0, 0, 1, 1);
-                const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
-                return `rgb(${r}, ${g}, ${b})`;
-              } catch (e) {
-                return '#000000';
-              }
-            };
-
             for (let i = 0; i < elements.length; i++) {
               const el = elements[i] as HTMLElement;
-              const style = window.getComputedStyle(el);
               
-              // Force conversion of problematic colors
-              if (style.color.includes('okl')) el.style.color = toRgb(style.color);
-              if (style.backgroundColor.includes('okl')) el.style.backgroundColor = toRgb(style.backgroundColor);
-              if (style.borderColor.includes('okl')) el.style.borderColor = toRgb(style.borderColor);
-              if (el.getAttribute('fill')?.includes('okl')) el.setAttribute('fill', toRgb(el.getAttribute('fill')!));
-              if (el.getAttribute('stroke')?.includes('okl')) el.setAttribute('stroke', toRgb(el.getAttribute('stroke')!));
+              // 2. Sanitize inline style attributes before the parser reads them
+              const inlineStyle = el.getAttribute('style');
+              if (inlineStyle && inlineStyle.includes('okl')) {
+                el.setAttribute('style', inlineStyle.replace(/okl(?:ab|ch)\([^;}]+\)/g, '#6366f1'));
+              }
+
+              // 3. Handle SVG attributes
+              const fill = el.getAttribute('fill');
+              if (fill && fill.includes('okl')) el.setAttribute('fill', '#6366f1');
               
-              // Specifically handle Recharts elements which often use oklch in Tailwind 4
-              if (el.classList.contains('recharts-rectangle') || el.classList.contains('recharts-bar-rectangle')) {
-                const fill = el.getAttribute('fill');
-                if (fill && fill.includes('okl')) {
-                  el.setAttribute('fill', toRgb(fill));
-                }
+              const stroke = el.getAttribute('stroke');
+              if (stroke && stroke.includes('okl')) el.setAttribute('stroke', '#6366f1');
+
+              // 4. Fallback for computed styles
+              try {
+                const style = window.getComputedStyle(el);
+                if (style.backgroundColor.includes('okl')) el.style.setProperty('background-color', '#6366f1', 'important');
+                if (style.color.includes('okl')) el.style.setProperty('color', '#6366f1', 'important');
+                if (style.borderColor.includes('okl')) el.style.setProperty('border-color', '#6366f1', 'important');
+                if (style.fill.includes('okl')) el.style.setProperty('fill', '#6366f1', 'important');
+                if (style.stroke.includes('okl')) el.style.setProperty('stroke', '#6366f1', 'important');
+              } catch (e) {
+                // Ignore computed style errors
               }
             }
           }
@@ -182,12 +189,13 @@ export default function Insights() {
         
         // Detailed Transactions on new page
         doc.addPage();
+        doc.setFont('helvetica', 'bold');
         doc.text('Detailed Transactions', 20, 20);
         
         autoTable(doc, {
           startY: 25,
           head: [['Date', 'Type', 'Category', 'Description', 'Amount']],
-          body: filteredExpenses.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map(e => [
+          body: allExpenses.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((e: any) => [
             format(new Date(e.date), 'MMM dd, yyyy'),
             e.type === 'income' ? 'Income' : 'Expense',
             e.category,
@@ -195,7 +203,7 @@ export default function Insights() {
             formatCurrencyForPDF(e.amount, settings.currency)
           ]),
           theme: 'grid',
-          styles: { fontSize: 8 },
+          styles: { fontSize: 8, font: 'helvetica' },
           headStyles: { fillColor: [100, 100, 100] }
         });
       }
@@ -284,8 +292,8 @@ export default function Insights() {
         )}
       </div>
 
-      <div className="grid gap-8 lg:grid-cols-2">
-        <Card className="border-none shadow-sm rounded-2xl overflow-hidden" ref={chartRef}>
+      <div className="grid gap-8 lg:grid-cols-2" ref={chartRef}>
+        <Card className="border-none shadow-sm rounded-2xl overflow-hidden">
           <CardHeader className="pb-2">
             <CardTitle className="text-lg font-bold flex items-center gap-2">
               <PieChartIcon className="h-5 w-5 text-primary" />
@@ -374,7 +382,7 @@ export default function Insights() {
               ) : (
                 <>
                   {categoryBreakdown.slice(0, 5).map((cat, index) => (
-                    <div key={cat.name} className="space-y-2">
+                    <div key={`${cat.name}-${index}`} className="space-y-2">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
                           <div className="h-8 w-8 rounded-lg flex items-center justify-center text-white font-bold text-xs" style={{ backgroundColor: cat.color }}>

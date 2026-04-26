@@ -9,6 +9,7 @@ import Settings from './pages/Settings';
 import Transactions from './pages/Transactions';
 import Insights from './pages/Insights';
 import Categories from './pages/Categories';
+import Groups from './pages/Groups';
 import Login from './pages/Login';
 
 function App() {
@@ -29,6 +30,9 @@ function App() {
   useEffect(() => {
     const checkAuth = async () => {
       try {
+        // Add a small delay for the very first check to avoid "Failed to fetch" on cold start
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
         const res = await fetch('/api/auth/me');
         if (res.ok) {
           const data = await res.json();
@@ -42,7 +46,7 @@ function App() {
           }
         }
       } catch (error) {
-        console.error('Auth check failed:', error);
+        console.warn('Auth check connection issue:', error);
       } finally {
         setIsLoading(false);
       }
@@ -85,6 +89,7 @@ function App() {
               <Route path="/transactions" element={<Transactions />} />
               <Route path="/insights" element={<Insights />} />
               <Route path="/bills" element={<Bills />} />
+              <Route path="/groups" element={<Groups />} />
               <Route path="/categories" element={<Categories />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="*" element={<Navigate to="/" replace />} />

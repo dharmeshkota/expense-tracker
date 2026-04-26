@@ -9,6 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner';
 import { useStore } from '@/store/useStore';
 import { cn } from '@/lib/utils';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Loader2 } from 'lucide-react';
 
 const expenseSchema = z.object({
   amount: z.string().refine((val) => !isNaN(parseFloat(val)) && parseFloat(val) > 0, {
@@ -25,12 +27,14 @@ type ExpenseFormValues = z.infer<typeof expenseSchema>;
 interface QuickAddExpenseProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess?: () => void;
 }
 
 export function QuickAddExpense({ isOpen, onClose, onSuccess }: QuickAddExpenseProps) {
   const { categories, addExpense, settings } = useStore();
-  const { register, handleSubmit, formState: { errors, isSubmitting }, reset, setValue, watch } = useForm<ExpenseFormValues>({
+  const queryClient = useQueryClient();
+
+  const { register, handleSubmit, formState: { errors }, reset, setValue, watch } = useForm<ExpenseFormValues>({
     resolver: zodResolver(expenseSchema),
     defaultValues: {
       date: new Date().toISOString().split('T')[0],
@@ -40,8 +44,8 @@ export function QuickAddExpense({ isOpen, onClose, onSuccess }: QuickAddExpenseP
 
   const type = watch('type');
 
-  const onSubmit = async (data: ExpenseFormValues) => {
-    try {
+  const addExpenseMutation = useMutation({
+    mutationFn: async (data: ExpenseFormValues) => {
       const res = await fetch('/api/expenses', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -51,19 +55,26 @@ export function QuickAddExpense({ isOpen, onClose, onSuccess }: QuickAddExpenseP
         }),
       });
 
-      if (res.ok) {
-        const newExpense = await res.json();
-        addExpense(newExpense);
-        toast.success(`${data.type === 'income' ? 'Income' : 'Expense'} added successfully!`);
-        reset();
-        onSuccess();
-        onClose();
-      } else {
-        toast.error('Failed to add transaction');
-      }
-    } catch (error) {
+      if (!res.ok) throw new Error('Failed to add transaction');
+      return res.json();
+    },
+    onSuccess: (newExpense, variables) => {
+      addExpense(newExpense);
+      toast.success(`${variables.type === 'income' ? 'Income' : 'Expense'} added successfully!`);
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['stats'] });
+      reset();
+      if (onSuccess) onSuccess();
+      onClose();
+    },
+    onError: () => {
       toast.error('An error occurred');
     }
+  });
+
+  const onSubmit = (data: ExpenseFormValues) => {
+    addExpenseMutation.mutate(data);
   };
 
   return (
@@ -73,7 +84,7 @@ export function QuickAddExpense({ isOpen, onClose, onSuccess }: QuickAddExpenseP
           <DialogTitle className="text-xl font-bold">Add New Transaction</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)}>
-          <div className="space-y-5 py-4">
+          <div className="space-y-6 py-4">
             <div className="flex p-1 bg-muted rounded-xl">
               <button
                 type="button"
@@ -97,23 +108,23 @@ export function QuickAddExpense({ isOpen, onClose, onSuccess }: QuickAddExpenseP
               </button>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="amount" className="text-sm font-semibold">Amount ({settings.currency})</Label>
+            <div className="space-y-3">
+              <Label htmlFor="amount" className="text-sm font-semibold ml-1 block mb-1">Amount ({settings.currency})</Label>
               <Input 
                 id="amount" 
                 type="number" 
                 step="0.01" 
                 placeholder="0.00" 
-                className="rounded-xl bg-card border border-border shadow-sm h-11 focus:bg-background transition-all"
+                className="rounded-xl bg-muted/20 border-muted shadow-sm h-12 focus:bg-background transition-all"
                 {...register('amount')} 
               />
               {errors.amount && <p className="text-xs text-destructive font-medium">{errors.amount.message}</p>}
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="category" className="text-sm font-semibold">Category</Label>
+            <div className="space-y-3">
+              <Label htmlFor="category" className="text-sm font-semibold ml-1 block mb-1">Category</Label>
               <Select onValueChange={(val: string) => setValue('category', val)}>
-                <SelectTrigger className="rounded-xl bg-card border border-border shadow-sm h-11">
+                <SelectTrigger className="rounded-xl bg-muted/20 border-muted shadow-sm h-12">
                   <SelectValue placeholder="Select category" />
                 </SelectTrigger>
                 <SelectContent className="rounded-xl">
@@ -123,16 +134,16 @@ export function QuickAddExpense({ isOpen, onClose, onSuccess }: QuickAddExpenseP
                       return cat.type === 'expense' || cat.type === 'both' || !cat.type;
                     })
                     .map((cat) => (
-                      <SelectItem key={cat.id} value={cat.name}>
-                        <div className="flex items-center gap-2">
+                      <SelectItem key={cat.id} value={cat.name} className="rounded-lg">
+                        <div className="flex items-center gap-2 py-0.5">
                           <div className="h-2 w-2 rounded-full" style={{ backgroundColor: cat.color }} />
                           <span>{cat.name}</span>
                         </div>
                       </SelectItem>
                     ))}
                   {type === 'income' && categories.filter(c => c.type === 'income').length === 0 && (
-                    <SelectItem value="Income">
-                      <div className="flex items-center gap-2">
+                    <SelectItem value="Income" className="rounded-lg">
+                      <div className="flex items-center gap-2 py-0.5">
                         <div className="h-2 w-2 rounded-full bg-indigo-500" />
                         <span>Income</span>
                       </div>
@@ -143,33 +154,33 @@ export function QuickAddExpense({ isOpen, onClose, onSuccess }: QuickAddExpenseP
               {errors.category && <p className="text-xs text-destructive font-medium">{errors.category.message}</p>}
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="description" className="text-sm font-semibold">Description</Label>
+            <div className="space-y-3">
+              <Label htmlFor="description" className="text-sm font-semibold ml-1 block mb-1">Description</Label>
               <Input 
                 id="description" 
                 placeholder={type === 'income' ? "Where did this money come from?" : "What did you spend on?"}
-                className="rounded-xl bg-card border border-border shadow-sm h-11 focus:bg-background transition-all"
+                className="rounded-xl bg-muted/20 border-muted shadow-sm h-12 focus:bg-background transition-all"
                 {...register('description')} 
               />
               {errors.description && <p className="text-xs text-destructive font-medium">{errors.description.message}</p>}
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="date" className="text-sm font-semibold">Date</Label>
+            <div className="space-y-3">
+              <Label htmlFor="date" className="text-sm font-semibold ml-1 block mb-1">Date</Label>
               <Input 
                 id="date" 
                 type="date" 
-                className="rounded-xl bg-card border border-border shadow-sm h-11 focus:bg-background transition-all"
+                className="rounded-xl bg-muted/20 border-muted shadow-sm h-12 focus:bg-background transition-all"
                 {...register('date')} 
               />
               {errors.date && <p className="text-xs text-destructive font-medium">{errors.date.message}</p>}
             </div>
           </div>
 
-          <DialogFooter className="gap-3">
-            <Button type="button" variant="ghost" onClick={onClose} className="rounded-xl">Cancel</Button>
-            <Button type="submit" disabled={isSubmitting} className="rounded-xl px-8 shadow-lg shadow-primary/20">
-              {isSubmitting ? 'Adding...' : `Add ${type === 'income' ? 'Income' : 'Expense'}`}
+          <DialogFooter className="gap-3 pt-4">
+            <Button type="button" variant="ghost" onClick={onClose} className="rounded-xl h-12">Cancel</Button>
+            <Button type="submit" disabled={addExpenseMutation.isPending} className="rounded-xl px-8 shadow-lg shadow-primary/20 h-12 font-bold min-w-[120px]">
+              {addExpenseMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : `Add ${type === 'income' ? 'Income' : 'Expense'}`}
             </Button>
           </DialogFooter>
         </form>

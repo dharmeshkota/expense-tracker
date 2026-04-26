@@ -25,9 +25,10 @@ const PRESET_COLORS = [
 ];
 
 export default function Categories() {
-  const { categories, addCategory, removeCategory, updateCategory } = useStore();
+  const { categories, setCategories, addCategory, removeCategory, updateCategory } = useStore();
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   
   const [newCategory, setNewCategory] = useState({
     name: '',
@@ -36,6 +37,25 @@ export default function Categories() {
     type: 'expense' as 'expense' | 'income' | 'both',
     excludeFromBudget: false
   });
+
+  const fetchCategories = async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/categories');
+      if (res.ok) {
+        const data = await res.json();
+        setCategories(data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch categories:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchCategories();
+  }, []);
 
   const handleAdd = async () => {
     if (!newCategory.name.trim()) {
@@ -94,6 +114,36 @@ export default function Categories() {
     }
   };
 
+  const seedDefaults = async () => {
+    const defaults = [
+      { name: "Rent", icon: "Tag", color: "#ff4757", excludeFromBudget: false, type: "expense" },
+      { name: "Food", icon: "Tag", color: "#2ed573", excludeFromBudget: false, type: "expense" },
+      { name: "Transport", icon: "Tag", color: "#ff6b2b", excludeFromBudget: false, type: "expense" },
+      { name: "Bills", icon: "Tag", color: "#00c2e0", excludeFromBudget: false, type: "expense" },
+      { name: "Essentials", icon: "Tag", color: "#facc15", excludeFromBudget: false, type: "expense" },
+      { name: "Grocery", icon: "Tag", color: "#f43f8e", excludeFromBudget: false, type: "expense" },
+      { name: "Others", icon: "Tag", color: "#504e4e", excludeFromBudget: false, type: "expense" },
+      { name: "Entertainment", icon: "Tag", color: "#a855f7", excludeFromBudget: false, type: "expense" }
+    ];
+
+    const toastId = toast.loading('Restoring categories...');
+    try {
+      await Promise.all(defaults.map(cat => 
+        fetch('/api/categories', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(cat),
+        })
+      ));
+      toast.dismiss(toastId);
+      toast.success('Categories restored!');
+      fetchCategories();
+    } catch (error) {
+      toast.dismiss(toastId);
+      toast.error('Failed to restore categories');
+    }
+  };
+
   return (
     <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       <div className="relative overflow-hidden rounded-3xl bg-primary/5 p-6 md:p-8 border border-primary/10">
@@ -112,15 +162,25 @@ export default function Categories() {
             </p>
           </div>
           
-          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+          <div className="flex flex-wrap items-center gap-3">
             <Button 
-              onClick={() => setIsAddOpen(true)} 
-              className="rounded-xl h-11 px-6 gap-2 shadow-lg shadow-primary/20 font-bold transition-all hover:scale-105 active:scale-95"
+              variant="outline"
+              onClick={seedDefaults} 
+              className="rounded-xl h-11 px-6 gap-2 font-bold border-muted-foreground/20 hover:bg-muted"
             >
-              <Plus className="h-4 w-4" />
-              <span>New Category</span>
+              <Check className="h-4 w-4" />
+              <span>Restore Defaults</span>
             </Button>
-            <DialogContent className="rounded-2xl sm:max-w-md">
+            
+            <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+              <Button 
+                onClick={() => setIsAddOpen(true)} 
+                className="rounded-xl h-11 px-6 gap-2 shadow-lg shadow-primary/20 font-bold transition-all hover:scale-105 active:scale-95"
+              >
+                <Plus className="h-4 w-4" />
+                <span>New Category</span>
+              </Button>
+              <DialogContent className="rounded-2xl sm:max-w-md">
               <DialogHeader>
                 <DialogTitle className="text-xl font-bold">Create Category</DialogTitle>
               </DialogHeader>
@@ -201,12 +261,17 @@ export default function Categories() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-        </header>
-      </div>
+        </div>
+      </header>
+    </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {categories.map((cat) => (
-          <Card key={cat.id} className="border-none shadow-sm rounded-2xl overflow-hidden group hover:shadow-md transition-all duration-300">
+        {isLoading ? (
+          Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="h-24 rounded-2xl bg-muted animate-pulse" />
+          ))
+        ) : categories.map((cat, index) => (
+          <Card key={`${cat.id}-${index}`} className="border-none shadow-sm rounded-2xl overflow-hidden group hover:shadow-md transition-all duration-300">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">

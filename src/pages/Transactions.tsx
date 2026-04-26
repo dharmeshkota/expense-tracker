@@ -1,7 +1,7 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { useStore } from '@/store/useStore';
 import { Button } from '@/components/ui/button';
-import { Search, Filter, Trash2, Download, Plus, Calendar as CalendarIcon, ChevronRight, X, Calendar, Wallet, TrendingUp, TrendingDown, ChevronLeft } from 'lucide-react';
+import { Search, Filter, Trash2, Download, Plus, Calendar as CalendarIcon, ChevronRight, X, Calendar, Wallet, TrendingUp, TrendingDown, ChevronLeft, Loader2 } from 'lucide-react';
 import { format, subMonths } from 'date-fns';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -15,16 +15,16 @@ import {
   PaginationContent,
   PaginationItem,
   PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
 } from "@/components/ui/pagination";
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 export default function Transactions() {
-  const { categories, setCategories, removeExpense, settings, expenses: storeExpenses, setExpenses: setStoreExpenses } = useStore();
+  const { categories, setCategories, settings } = useStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const queryClient = useQueryClient();
   
   // Pagination & Month Filtering
   const months = useMemo(() => {
@@ -41,12 +41,10 @@ export default function Transactions() {
 
   const [timeframe, setTimeframe] = useState(months[0].value);
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [isLoading, setIsLoading] = useState(!storeExpenses.length);
 
-  const fetchExpenses = async () => {
-    if (!storeExpenses.length) setIsLoading(true);
-    try {
+  const { data: transactionsData, isLoading, isFetching } = useQuery({
+    queryKey: ['expenses', timeframe, currentPage],
+    queryFn: async () => {
       const [year, month] = timeframe.split('-');
       const params = new URLSearchParams({
         month,
@@ -60,29 +58,40 @@ export default function Transactions() {
         fetch('/api/categories')
       ]);
 
-      if (expensesRes.ok) {
-        const data = await expensesRes.json();
-        setStoreExpenses(data.expenses);
-        setTotalPages(data.pagination.pages);
-      }
-      if (categoriesRes.ok) {
-        setCategories(await categoriesRes.json());
-      }
-    } catch (error) {
-      toast.error('Failed to fetch expenses');
-    } finally {
-      setIsLoading(false);
+      if (!expensesRes.ok || !categoriesRes.ok) throw new Error('Failed to fetch data');
+
+      const [expensesData, cats] = await Promise.all([
+        expensesRes.json(),
+        categoriesRes.json()
+      ]);
+
+      setCategories(cats);
+      return expensesData;
+    },
+    staleTime: 30000,
+  });
+
+  const expenses = transactionsData?.expenses || [];
+  const totalPages = transactionsData?.pagination.pages || 1;
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/expenses/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete transaction');
+      return id;
+    },
+    onSuccess: () => {
+      toast.success('Transaction deleted');
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+    },
+    onError: () => {
+      toast.error('Failed to delete transaction');
     }
-  };
-
-  useEffect(() => {
-    fetchExpenses();
-  }, [timeframe, currentPage]);
-
-  const expenses = storeExpenses;
+  });
 
   const filteredExpenses = useMemo(() => {
-    return expenses.filter(e => {
+    return expenses.filter((e: any) => {
       const matchesSearch = e.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           e.category.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesCategory = selectedCategory === 'All' || e.category === selectedCategory;
@@ -90,15 +99,9 @@ export default function Transactions() {
     });
   }, [expenses, searchTerm, selectedCategory]);
 
-  const handleDelete = async (id: string) => {
-    try {
-      const res = await fetch(`/api/expenses/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        removeExpense(id);
-        toast.success('Transaction deleted');
-      }
-    } catch (error) {
-      toast.error('Failed to delete transaction');
+  const handleDelete = (id: string) => {
+    if (confirm('Are you sure you want to delete this transaction?')) {
+      deleteMutation.mutate(id);
     }
   };
 
@@ -107,86 +110,101 @@ export default function Transactions() {
     setSelectedCategory('All');
   };
 
-  const downloadPDF = () => {
-    const doc = new jsPDF('p', 'mm', 'a4');
-    const now = new Date();
-    const timeframeLabel = months.find(m => m.value === timeframe)?.label || timeframe;
-    
-    // Header
-    doc.setFillColor(99, 102, 241); // Indigo primary
-    doc.rect(0, 0, 210, 40, 'F');
-    
-    doc.setFontSize(24);
-    doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Expense Report', 20, 25);
-    
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`${timeframeLabel} | Generated on ${format(now, 'PPP p')}`, 20, 32);
+  const downloadPDF = async () => {
+    const toastId = toast.loading('Preparing full report...');
+    try {
+      const [year, month] = timeframe.split('-');
+      const res = await fetch(`/api/expenses?month=${month}&year=${year}&limit=10000`);
+      if (!res.ok) throw new Error('Failed to fetch all expenses');
+      
+      const data = await res.json();
+      const allExpenses = data.expenses;
 
-    // Summary Section
-    const totalIncome = filteredExpenses.filter(e => e.type === 'income').reduce((sum, e) => sum + e.amount, 0);
-    const totalExpenses = filteredExpenses.filter(e => e.type === 'expense').reduce((sum, e) => sum + e.amount, 0);
-    const balance = totalIncome - totalExpenses;
+      const doc = new jsPDF('p', 'mm', 'a4');
+      const now = new Date();
+      const timeframeLabel = months.find(m => m.value === timeframe)?.label || timeframe;
+      
+      // Header
+      doc.setFillColor(99, 102, 241); // Indigo primary
+      doc.rect(0, 0, 210, 40, 'F');
+      
+      doc.setFontSize(24);
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Expense Report', 20, 25);
+      
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`${timeframeLabel} | Generated on ${format(now, 'PPP p')}`, 20, 32);
 
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(14);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Monthly Summary', 20, 55);
-    
-    autoTable(doc, {
-      startY: 60,
-      head: [['Metric', 'Amount']],
-      body: [
-        ['Total Income', formatCurrencyForPDF(totalIncome, settings.currency)],
-        ['Total Expenses', formatCurrencyForPDF(totalExpenses, settings.currency)],
-        ['Net Balance', formatCurrencyForPDF(balance, settings.currency)],
-      ],
-      theme: 'striped',
-      headStyles: { fillColor: [99, 102, 241] },
-      margin: { left: 20, right: 20 },
-      styles: { font: 'helvetica', fontSize: 10 }
-    });
+      // Summary Section
+      const totalIncome = allExpenses.filter((e: any) => e.type === 'income').reduce((sum: number, e: any) => sum + e.amount, 0);
+      const totalExpenses = allExpenses.filter((e: any) => e.type === 'expense').reduce((sum: number, e: any) => sum + e.amount, 0);
+      const balance = totalIncome - totalExpenses;
 
-    // Transactions Table
-    doc.setFontSize(14);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Transaction Details', 20, (doc as any).lastAutoTable.finalY + 15);
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Monthly Summary', 20, 55);
+      
+      autoTable(doc, {
+        startY: 60,
+        head: [['Metric', 'Amount']],
+        body: [
+          ['Total Income', formatCurrencyForPDF(totalIncome, settings.currency)],
+          ['Total Expenses', formatCurrencyForPDF(totalExpenses, settings.currency)],
+          ['Net Balance', formatCurrencyForPDF(balance, settings.currency)],
+        ],
+        theme: 'striped',
+        headStyles: { fillColor: [99, 102, 241] },
+        margin: { left: 20, right: 20 },
+        styles: { font: 'helvetica', fontSize: 10 }
+      });
 
-    autoTable(doc, {
-      startY: (doc as any).lastAutoTable.finalY + 20,
-      head: [['Date', 'Type', 'Category', 'Description', 'Amount']],
-      body: filteredExpenses.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map(e => [
-        format(new Date(e.date), 'MMM dd, yyyy'),
-        e.type === 'income' ? 'Income' : 'Expense',
-        e.category,
-        e.description,
-        `${e.type === 'income' ? '+' : '-'}${formatCurrencyForPDF(e.amount, settings.currency)}`
-      ]),
-      theme: 'grid',
-      styles: { fontSize: 9, font: 'helvetica', cellPadding: 3 },
-      headStyles: { fillColor: [71, 85, 105], fontSize: 10, fontStyle: 'bold' },
-      columnStyles: {
-        0: { cellWidth: 30 },
-        1: { cellWidth: 20 },
-        2: { cellWidth: 30 },
-        4: { halign: 'right', fontStyle: 'bold', cellWidth: 35 }
-      },
-      didParseCell: (data) => {
-        if (data.section === 'body' && data.column.index === 4) {
-          const val = data.cell.raw as string;
-          if (val.startsWith('+')) {
-            data.cell.styles.textColor = [16, 185, 129]; // emerald-500
-          } else if (val.startsWith('-')) {
-            data.cell.styles.textColor = [239, 68, 68]; // destructive/red-500
+      // Transactions Table
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Transaction Details', 20, (doc as any).lastAutoTable.finalY + 15);
+
+      autoTable(doc, {
+        startY: (doc as any).lastAutoTable.finalY + 20,
+        head: [['Date', 'Type', 'Category', 'Description', 'Amount']],
+        body: allExpenses.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((e: any) => [
+          format(new Date(e.date), 'MMM dd, yyyy'),
+          e.type === 'income' ? 'Income' : 'Expense',
+          e.category,
+          e.description,
+          `${e.type === 'income' ? '+' : '-'}${formatCurrencyForPDF(e.amount, settings.currency)}`
+        ]),
+        theme: 'grid',
+        styles: { fontSize: 9, font: 'helvetica', cellPadding: 3 },
+        headStyles: { fillColor: [71, 85, 105], fontSize: 10, fontStyle: 'bold' },
+        columnStyles: {
+          0: { cellWidth: 30 },
+          1: { cellWidth: 20 },
+          2: { cellWidth: 30 },
+          4: { halign: 'right', fontStyle: 'bold', cellWidth: 35 }
+        },
+        didParseCell: (data) => {
+          if (data.section === 'body' && data.column.index === 4) {
+            const val = data.cell.raw as string;
+            if (val.startsWith('+')) {
+              data.cell.styles.textColor = [16, 185, 129]; // emerald-500
+            } else if (val.startsWith('-')) {
+              data.cell.styles.textColor = [239, 68, 68]; // destructive/red-500
+            }
           }
         }
-      }
-    });
+      });
 
-    doc.save(`Financial_Report_${timeframeLabel.replace(' ', '_')}.pdf`);
-    toast.success('Expense report downloaded!');
+      doc.save(`Financial_Report_${timeframeLabel.replace(' ', '_')}.pdf`);
+      toast.dismiss(toastId);
+      toast.success('Full expense report downloaded!');
+    } catch (error) {
+      toast.dismiss(toastId);
+      toast.error('Failed to generate full report');
+      console.error(error);
+    }
   };
 
   return (
@@ -297,7 +315,12 @@ export default function Transactions() {
         )}
       </div>
 
-      <div className="bg-card border-none shadow-sm rounded-2xl overflow-hidden">
+      <div className="bg-card border-none shadow-sm rounded-2xl overflow-hidden relative">
+        {isLoading && (
+          <div className="absolute inset-0 bg-background/50 backdrop-blur-[1px] z-10 flex items-center justify-center">
+            <Loader2 className="h-8 w-8 text-primary animate-spin" />
+          </div>
+        )}
         {/* Desktop Table */}
         <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -333,11 +356,11 @@ export default function Transactions() {
                   </tr>
                 ))
               ) : filteredExpenses.length > 0 ? (
-                filteredExpenses.map((expense) => {
+                filteredExpenses.map((expense, index) => {
                   const category = categories.find(c => c.name === expense.category);
                   const isIncome = expense.type === 'income';
                   return (
-                    <tr key={expense.id} className="group hover:bg-muted/30 transition-colors">
+                    <tr key={`${expense.id}-${index}`} className="group hover:bg-muted/30 transition-colors">
                       <td className="px-6 py-4">
                         <div className="flex items-center space-x-3">
                           <div 
@@ -367,9 +390,10 @@ export default function Transactions() {
                       <td className="px-6 py-4 text-right">
                         <button 
                           onClick={() => handleDelete(expense.id)}
-                          className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                          disabled={deleteMutation.isPending}
+                          className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50"
                         >
-                          <Trash2 className="h-4 w-4" />
+                          {deleteMutation.isPending && deleteMutation.variables === expense.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                         </button>
                       </td>
                     </tr>
@@ -402,11 +426,11 @@ export default function Transactions() {
               </div>
             ))
           ) : filteredExpenses.length > 0 ? (
-            filteredExpenses.map((expense) => {
+            filteredExpenses.map((expense, index) => {
               const category = categories.find(c => c.name === expense.category);
               const isIncome = expense.type === 'income';
               return (
-                <div key={expense.id} className="px-2 py-3 md:p-4 flex items-center justify-between active:bg-muted/50 transition-colors gap-2 md:gap-3">
+                <div key={`${expense.id}-${index}`} className="px-2 py-3 md:p-4 flex items-center justify-between active:bg-muted/50 transition-colors gap-2 md:gap-3">
                   <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
                     <div 
                       className="h-8 w-8 md:h-10 md:w-10 rounded-xl flex items-center justify-center text-white shadow-sm shrink-0"
@@ -429,9 +453,10 @@ export default function Transactions() {
                     </span>
                     <button 
                       onClick={() => handleDelete(expense.id)}
-                      className="p-1.5 md:p-2 text-muted-foreground hover:text-destructive active:bg-destructive/10 rounded-lg transition-colors"
+                      disabled={deleteMutation.isPending}
+                      className="p-1.5 md:p-2 text-muted-foreground hover:text-destructive active:bg-destructive/10 rounded-lg transition-colors disabled:opacity-50"
                     >
-                      <Trash2 className="h-3.5 w-3.5 md:h-4 md:w-4" />
+                      {deleteMutation.isPending && deleteMutation.variables === expense.id ? <Loader2 className="h-3.5 w-3.5 md:h-4 md:w-4 animate-spin" /> : <Trash2 className="h-3.5 w-3.5 md:h-4 md:w-4" />}
                     </button>
                   </div>
                 </div>
@@ -493,7 +518,6 @@ export default function Transactions() {
       <QuickAddExpense 
         isOpen={isAddOpen} 
         onClose={() => setIsAddOpen(false)} 
-        onSuccess={fetchExpenses} 
       />
     </div>
   );

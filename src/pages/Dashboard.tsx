@@ -1,7 +1,7 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useStore } from '@/store/useStore';
 import { StatCard } from '@/components/dashboard/StatCard';
-import { Wallet, TrendingUp, Calendar as CalendarIcon, CreditCard, Plus, ArrowUpRight, ArrowDownRight, Search, Filter, LayoutDashboard, TrendingDown } from 'lucide-react';
+import { Wallet, TrendingUp, Calendar as CalendarIcon, CreditCard, Plus, Search, Filter, LayoutDashboard, TrendingDown, Loader2 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell
@@ -11,10 +11,12 @@ import { cn, formatCurrency } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { QuickAddExpense } from '@/components/dashboard/QuickAddExpense';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 export default function Dashboard() {
-  const { expenses, settings, categories, setExpenses, setBills, setCategories, dashboardStats, setDashboardStats } = useStore();
+  const { settings, categories, setCategories, setBills } = useStore();
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const queryClient = useQueryClient();
   
   const months = useMemo(() => {
     const result = [];
@@ -29,11 +31,11 @@ export default function Dashboard() {
   }, []);
 
   const [timeframe, setTimeframe] = useState(months[0].value);
-  const [isLoading, setIsLoading] = useState(true);
 
-  const fetchDashboardData = async () => {
-    setIsLoading(true);
-    try {
+  // Use TanStack Query for data fetching
+  const { data: dashboardData, isLoading, isFetching } = useQuery({
+    queryKey: ['dashboard', timeframe],
+    queryFn: async () => {
       const [year, month] = timeframe.split('-');
       const [statsRes, expensesRes, billsRes, categoriesRes] = await Promise.all([
         fetch(`/api/stats?month=${month}&year=${year}`),
@@ -42,30 +44,36 @@ export default function Dashboard() {
         fetch('/api/categories')
       ]);
       
-      if (statsRes.ok) {
-        const statsData = await statsRes.json();
-        setDashboardStats(statsData);
+      if (!statsRes.ok || !expensesRes.ok || !billsRes.ok || !categoriesRes.ok) {
+        throw new Error('Failed to fetch dashboard data');
       }
-      if (expensesRes.ok) {
-        const data = await expensesRes.json();
-        setExpenses(data.expenses);
-      }
-      if (billsRes.ok) setBills(await billsRes.json());
-      if (categoriesRes.ok) setCategories(await categoriesRes.json());
-    } catch (error) {
-      console.error('Failed to fetch dashboard data:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
-  useEffect(() => {
-    fetchDashboardData();
-  }, [timeframe]);
+      const [stats, expensesData, bills, cats] = await Promise.all([
+        statsRes.json(),
+        expensesRes.json(),
+        billsRes.json(),
+        categoriesRes.json()
+      ]);
 
-  const stats = dashboardStats;
+      // Sync categories to store if needed
+      setCategories(cats);
+      setBills(bills);
+
+      return {
+        stats,
+        expenses: expensesData.expenses,
+        bills
+      };
+    },
+    staleTime: 30000, // 30 seconds
+  });
+
+  const stats = dashboardData?.stats;
+  const expenses = dashboardData?.expenses || [];
 
   const chartData = useMemo(() => {
+    if (!dashboardData) return [];
+    
     const [year, month] = timeframe.split('-').map(Number);
     const start = startOfMonth(new Date(year, month - 1));
     const end = timeframe === months[0].value ? new Date() : endOfMonth(new Date(year, month - 1));
@@ -85,7 +93,7 @@ export default function Dashboard() {
         income
       };
     });
-  }, [expenses, timeframe, months]);
+  }, [dashboardData, timeframe, months, expenses]);
 
   const categoryData = useMemo(() => {
     if (!stats) return [];
@@ -101,7 +109,13 @@ export default function Dashboard() {
   const budgetProgress = stats ? Math.min(100, (stats.budgetSpent / settings.monthlyBudget) * 100) : 0;
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="space-y-8 animate-in fade-in duration-500 relative">
+      {isFetching && !isLoading && (
+        <div className="absolute top-0 right-0 z-50 p-4">
+          <Loader2 className="h-4 w-4 animate-spin text-primary opacity-50" />
+        </div>
+      )}
+
       <div className="relative overflow-hidden rounded-3xl bg-primary/5 p-6 md:p-8 border border-primary/10">
         <div className="absolute top-0 right-0 -mt-4 -mr-4 h-32 w-32 rounded-full bg-primary/10 blur-3xl" />
         <div className="absolute bottom-0 left-0 -mb-4 -ml-4 h-24 w-24 rounded-full bg-primary/10 blur-2xl" />
@@ -349,8 +363,8 @@ export default function Dashboard() {
                   <div key={i} className="h-4 w-full bg-muted animate-pulse rounded" />
                 ))
               ) : (
-                categoryData.slice(0, 4).map((cat: any) => (
-                  <div key={cat.name} className="flex items-center justify-between">
+                categoryData.slice(0, 4).map((cat: any, i: number) => (
+                  <div key={`${cat.name}-${i}`} className="flex items-center justify-between">
                     <div className="flex items-center space-x-2">
                       <div className="h-3 w-3 rounded-full" style={{ backgroundColor: cat.color }} />
                       <span className="text-sm font-medium">{cat.name}</span>
@@ -382,11 +396,11 @@ export default function Dashboard() {
                   </div>
                 ))
               ) : stats?.recentExpenses?.length > 0 ? (
-                stats.recentExpenses.map((expense: any) => {
+                stats.recentExpenses.map((expense: any, i: number) => {
                   const category = categories.find(c => c.name === expense.category);
                   const isIncome = expense.type === 'income';
                   return (
-                    <div key={expense.id} className="flex items-center justify-between group">
+                    <div key={`${expense.id}-${i}`} className="flex items-center justify-between group">
                       <div className="flex items-center space-x-3">
                         <div 
                           className="h-10 w-10 rounded-xl flex items-center justify-center text-white shadow-sm"
@@ -422,7 +436,6 @@ export default function Dashboard() {
       <QuickAddExpense 
         isOpen={isAddOpen} 
         onClose={() => setIsAddOpen(false)} 
-        onSuccess={fetchDashboardData} 
       />
     </div>
   );

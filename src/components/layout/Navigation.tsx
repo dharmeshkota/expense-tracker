@@ -1,4 +1,4 @@
-import { Home, PieChart, Receipt, Settings, LogOut, Wallet, LayoutDashboard, BarChart3, Tag } from 'lucide-react';
+import { Home, PieChart, Receipt, Settings, LogOut, Wallet, LayoutDashboard, BarChart3, Tag, Users } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useStore } from '@/store/useStore';
@@ -7,6 +7,7 @@ const navItems = [
   { icon: LayoutDashboard, label: 'Dashboard', href: '/' },
   { icon: Wallet, label: 'Expenses', href: '/transactions' },
   { icon: BarChart3, label: 'Insights', href: '/insights' },
+  { icon: Users, label: 'Groups', href: '/groups' },
   { icon: Receipt, label: 'Bills', href: '/bills' },
   { icon: Tag, label: 'Categories', href: '/categories' },
   { icon: Settings, label: 'Settings', href: '/settings' },
