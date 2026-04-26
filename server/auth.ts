@@ -40,7 +40,7 @@ export function setupAuth(app: Express) {
     passport.use(new GoogleStrategy({
       clientID: googleClientId,
       clientSecret: googleClientSecret,
-      callbackURL: `${appUrl}/auth/google/callback`,
+      callbackURL: `${appUrl}/api/auth/google/callback`,
     }, async (accessToken, refreshToken, profile, done) => {
       try {
         const user = await prisma.user.upsert({
@@ -76,7 +76,7 @@ export function setupAuth(app: Express) {
   });
 
   // Auth Routes
-  app.post('/api/auth/signup', async (req, res) => {
+  app.post('/api/auth/signup', async (req: any, res) => {
     const { email, password, name } = req.body;
     try {
       const existingUser = await prisma.user.findUnique({ where: { email } });
@@ -91,7 +91,7 @@ export function setupAuth(app: Express) {
           name,
         },
       });
-      req.login(user, (err) => {
+      req.login(user, (err: any) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json(user);
       });
@@ -100,11 +100,11 @@ export function setupAuth(app: Express) {
     }
   });
 
-  app.post('/api/auth/login', (req, res, next) => {
+  app.post('/api/auth/login', (req: any, res, next) => {
     passport.authenticate('local', (err: any, user: any, info: any) => {
       if (err) return next(err);
       if (!user) return res.status(400).json({ error: info.message });
-      req.login(user, (err) => {
+      req.login(user, (err: any) => {
         if (err) return next(err);
         res.json(user);
       });
@@ -118,7 +118,7 @@ export function setupAuth(app: Express) {
           error: 'AUTH_GOOGLE_ID is missing in environment variables. Please set it in your Vercel dashboard.' 
         });
       }
-      const redirectUri = `${appUrl}/auth/google/callback`;
+      const redirectUri = `${appUrl}/api/auth/google/callback`;
       const params = new URLSearchParams({
         client_id: googleClientId,
         redirect_uri: redirectUri,
@@ -135,11 +135,14 @@ export function setupAuth(app: Express) {
     }
   });
 
-  app.get('/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+  app.get('/api/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
 
-  app.get('/auth/google/callback', 
+  app.get('/api/auth/google/callback', 
     passport.authenticate('google', { failureRedirect: '/login' }),
-    (req, res) => {
+    (req: any, res) => {
+      // THIS LINE IS NEW: It forces cookie-session to recognize a change and save the cookie
+      req.session.lastLogin = Date.now();
+      
       res.send(`
         <html>
           <body>
@@ -163,9 +166,7 @@ export function setupAuth(app: Express) {
   });
 
   app.post('/api/auth/logout', (req: any, res) => {
-    req.logout((err: any) => {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json({ success: true });
-    });
+    req.session = null; // This safely destroys the encrypted cookie
+    res.json({ success: true });
   });
 }

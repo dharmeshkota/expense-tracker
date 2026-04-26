@@ -100,3 +100,10 @@ model Budget {
 
   @@unique([userId, month, year])
 }
+
+model Session {
+  id        String   @id
+  sid       String   @unique
+  data      String
+  expiresAt DateTime
+}

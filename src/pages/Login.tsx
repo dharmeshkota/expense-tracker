@@ -24,7 +24,7 @@ export default function Login() {
       
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
         toast.success('Successfully logged in!');
-        fetch('/api/auth/me')
+        fetch('/api/auth/me', { credentials: 'include' })
           .then(res => res.json())
           .then(data => setUser(data))
           .catch(err => {
