@@ -31,6 +31,7 @@ export default function Insights() {
   }, []);
 
   const [timeframe, setTimeframe] = useState(months[0].value);
+  const [periodType, setPeriodType] = useState<'week' | 'month' | 'quarter' | 'year'>('month');
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -39,7 +40,7 @@ export default function Insights() {
       const [year, month] = timeframe.split('-');
       try {
         const [statsRes, categoriesRes] = await Promise.all([
-          fetch(`/api/stats?month=${month}&year=${year}`),
+          fetch(`/api/stats?month=${month}&year=${year}&period=${periodType}`),
           fetch('/api/categories')
         ]);
 
@@ -56,7 +57,7 @@ export default function Insights() {
       }
     };
     fetchStats();
-  }, [timeframe, setInsightStats, setCategories]);
+  }, [timeframe, periodType, setInsightStats, setCategories]);
 
   const stats = insightStats;
 
@@ -220,12 +221,29 @@ export default function Insights() {
           </div>
           
           <div className="flex flex-wrap items-center gap-3">
+            <Select value={periodType} onValueChange={(v: any) => setPeriodType(v)}>
+              <SelectTrigger className="w-[140px] rounded-xl bg-background/80 backdrop-blur-sm border border-border/50 shadow-sm h-11 text-xs font-bold hover:bg-background transition-all">
+                <Filter className="h-3.5 w-3.5 mr-2 text-primary" />
+                <SelectValue placeholder="Period">
+                  {periodType === 'week' ? 'Weekly' : 
+                   periodType === 'month' ? 'Monthly' : 
+                   periodType === 'quarter' ? 'Quarterly' : 'Yearly'}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent className="rounded-xl" sideOffset={4}>
+                <SelectItem value="week">Weekly</SelectItem>
+                <SelectItem value="month">Monthly</SelectItem>
+                <SelectItem value="quarter">Quarterly</SelectItem>
+                <SelectItem value="year">Yearly</SelectItem>
+              </SelectContent>
+            </Select>
+
             <Select value={timeframe} onValueChange={setTimeframe}>
               <SelectTrigger className="w-[180px] md:w-[200px] rounded-xl bg-background/80 backdrop-blur-sm border border-border/50 shadow-sm h-11 text-xs font-bold hover:bg-background transition-all">
                 <Calendar className="h-3.5 w-3.5 mr-2 text-primary" />
-                <SelectValue placeholder="Select month" />
+                <SelectValue placeholder="Select period" />
               </SelectTrigger>
-              <SelectContent className="rounded-xl">
+              <SelectContent className="rounded-xl" sideOffset={4}>
                 {months.map((m) => (
                   <SelectItem key={m.value} value={m.value}>
                     {m.label}

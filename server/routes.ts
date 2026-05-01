@@ -8,15 +8,70 @@ export function setupRoutes(app: Express) {
     res.status(401).json({ error: 'Unauthorized' });
   };
 
+  // Auth User check
+  app.get('/api/auth/me', async (req: any, res) => {
+    if (req.isAuthenticated()) {
+      const user = await prisma.user.findUnique({
+        where: { id: req.user.id },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          image: true,
+          currency: true,
+          monthlyBudget: true,
+          theme: true,
+        }
+      });
+      res.json(user);
+    } else {
+      res.status(401).json({ error: 'Unauthorized' });
+    }
+  });
+
+  // Helper to check group membership
+  const isGroupMember = async (userId: string, groupId: string) => {
+    const membership = await prisma.groupMember.findUnique({
+      where: {
+        groupId_userId: { groupId, userId }
+      }
+    });
+    return !!membership;
+  };
+
+  // Settings Routes
+  app.patch('/api/settings', isAuthenticated, async (req: any, res) => {
+    const { currency, monthlyBudget, theme, name } = req.body;
+    try {
+      const user = await prisma.user.update({
+        where: { id: req.user.id },
+        data: {
+          ...(currency && { currency }),
+          ...(monthlyBudget !== undefined && { monthlyBudget: parseFloat(monthlyBudget) }),
+          ...(theme && { theme }),
+          ...(name && { name }),
+        },
+      });
+      res.json(user);
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to update settings' });
+    }
+  });
+
   // Expense Routes
   app.get('/api/expenses', isAuthenticated, async (req: any, res) => {
-    const { month, year, page = '1', limit = '10', type } = req.query;
+    const { month, year, page = '1', limit = '10', type, startDate, endDate } = req.query;
     const p = parseInt(page as string);
     const l = parseInt(limit as string);
     
     const where: any = { userId: req.user.id };
     
-    if (month && year) {
+    if (startDate && endDate) {
+      where.date = {
+        gte: new Date(startDate as string),
+        lte: new Date(endDate as string),
+      };
+    } else if (month && year) {
       const m = parseInt(month as string);
       const y = parseInt(year as string);
       where.date = {
@@ -60,6 +115,7 @@ export function setupRoutes(app: Express) {
         type,
         date: new Date(date),
         userId: req.user.id,
+        creatorId: req.user.id,
       },
     });
     res.json(expense);
@@ -144,9 +200,35 @@ export function setupRoutes(app: Express) {
 
   // Recurring Bill Routes
   app.get('/api/bills', isAuthenticated, async (req: any, res) => {
+    const { month, year, allUnpaid } = req.query;
+    const userId = req.user.id;
+    const where: any = { userId };
+    
+    if (allUnpaid === 'true') {
+      const m = month ? parseInt(month as string) : new Date().getMonth() + 1;
+      const y = year ? parseInt(year as string) : new Date().getFullYear();
+      where.OR = [
+        { isPaid: false },
+        { 
+          AND: [
+            { isPaid: true },
+            { month: m },
+            { year: y }
+          ]
+        }
+      ];
+    } else if (month && year) {
+      where.month = parseInt(month as string);
+      where.year = parseInt(year as string);
+    }
+    
     const bills = await prisma.recurringBill.findMany({
-      where: { userId: req.user.id },
-      orderBy: { dueDate: 'asc' },
+      where,
+      orderBy: [
+        { dueDate: 'asc' },
+        { year: 'desc' },
+        { month: 'desc' }
+      ],
     });
     res.json(bills);
   });
@@ -241,32 +323,52 @@ export function setupRoutes(app: Express) {
 
   // Dashboard Stats
   app.get('/api/stats', isAuthenticated, async (req: any, res) => {
-    const { month, year } = req.query;
-    const m = parseInt(month as string);
-    const y = parseInt(year as string);
+    const { month, year, period = 'month' } = req.query;
+    const userId = req.user.id;
 
-    const startDate = new Date(y, m - 1, 1);
-    const endDate = new Date(y, m, 0);
+    let startDate: Date;
+    let endDate: Date;
+
+    const now = new Date();
+    const currYear = year ? parseInt(year as string) : now.getFullYear();
+    const currMonth = month ? parseInt(month as string) : now.getMonth() + 1;
+
+    if (period === 'week') {
+      const today = new Date();
+      startDate = new Date(today.setDate(today.getDate() - today.getDay()));
+      startDate.setHours(0, 0, 0, 0);
+      endDate = new Date();
+      endDate.setDate(startDate.getDate() + 6);
+      endDate.setHours(23, 59, 59, 999);
+    } else if (period === 'quarter') {
+      const quarter = Math.floor((currMonth - 1) / 3);
+      startDate = new Date(currYear, quarter * 3, 1);
+      endDate = new Date(currYear, (quarter + 1) * 3, 0, 23, 59, 59, 999);
+    } else if (period === 'year') {
+      startDate = new Date(currYear, 0, 1);
+      endDate = new Date(currYear, 11, 31, 23, 59, 59, 999);
+    } else {
+      // Default to month
+      startDate = new Date(currYear, currMonth - 1, 1);
+      endDate = new Date(currYear, currMonth, 0, 23, 59, 59, 999);
+    }
 
     const [expenses, categories, budget] = await prisma.$transaction([
       prisma.expense.findMany({
         where: {
-          userId: req.user.id,
-          date: {
-            gte: startDate,
-            lte: endDate,
-          },
+          userId,
+          date: { gte: startDate, lte: endDate },
         },
       }),
       prisma.category.findMany({
-        where: { userId: req.user.id },
+        where: { userId },
       }),
       prisma.budget.findUnique({
         where: {
           userId_month_year: {
-            userId: req.user.id,
-            month: m,
-            year: y,
+            userId,
+            month: currMonth,
+            year: currYear,
           },
         },
       }),
@@ -347,6 +449,80 @@ export function setupRoutes(app: Express) {
     res.json(groups);
   });
 
+  app.get('/api/groups/:id/activity', isAuthenticated, async (req: any, res) => {
+    const groupId = req.params.id;
+    const userId = req.user.id;
+    const { page = '1', limit = '20' } = req.query;
+    const p = parseInt(page as string);
+    const l = parseInt(limit as string);
+
+    if (!(await isGroupMember(userId, groupId))) {
+      return res.status(403).json({ error: 'Not a member of this group' });
+    }
+
+    const [expenses, total] = await prisma.$transaction([
+      prisma.expense.findMany({
+        where: { groupId },
+        orderBy: [
+          { date: 'desc' },
+          { createdAt: 'desc' }
+        ],
+        skip: (p - 1) * l,
+        take: l,
+        include: {
+          user: {
+            select: { id: true, name: true, image: true }
+          },
+          creator: {
+            select: { id: true, name: true, image: true }
+          }
+        }
+      }),
+      prisma.expense.count({ where: { groupId } })
+    ]);
+
+    res.json({
+      activities: expenses,
+      pagination: {
+        total,
+        pages: Math.ceil(total / l),
+        currentPage: p,
+        limit: l
+      }
+    });
+  });
+
+  app.delete('/api/groups/:id/split/:expenseId', isAuthenticated, async (req: any, res) => {
+    const groupId = req.params.id;
+    const expenseId = req.params.expenseId;
+    const userId = req.user.id;
+
+    const expense = await prisma.expense.findUnique({
+      where: { id: expenseId }
+    });
+
+    if (!expense || expense.groupId !== groupId) {
+      return res.status(404).json({ error: 'Split not found' });
+    }
+
+    // Only the creator (the one who paid/logged it) can delete the whole split
+    const isAuthorized = expense.creatorId ? expense.creatorId === userId : expense.userId === userId;
+    if (!isAuthorized) {
+      return res.status(403).json({ error: 'Only the creator can delete this split' });
+    }
+
+    // Delete all related splits (same description and date in this group)
+    await prisma.expense.deleteMany({
+      where: {
+        groupId,
+        description: expense.description,
+        date: expense.date
+      }
+    });
+
+    res.json({ success: true });
+  });
+
   app.post('/api/groups', isAuthenticated, async (req: any, res) => {
     const { name, description } = req.body;
     const group = await prisma.group.create({
@@ -417,22 +593,40 @@ export function setupRoutes(app: Express) {
   app.post('/api/groups/:id/split', isAuthenticated, async (req: any, res) => {
     const { amount, description, category, date, memberIds } = req.body;
     const groupId = req.params.id;
+    const userId = req.user.id;
+
+    if (!(await isGroupMember(userId, groupId))) {
+      return res.status(403).json({ error: 'Only members can split bills' });
+    }
     
+    // Ensure all target users are actually members
+    const memberships = await prisma.groupMember.findMany({
+      where: {
+        groupId,
+        userId: { in: memberIds }
+      }
+    });
+
+    if (memberships.length !== memberIds.length) {
+      return res.status(400).json({ error: 'Some users are not members of this group' });
+    }
+
     const totalAmount = parseFloat(amount);
     const splitCount = memberIds.length;
     const individualAmount = totalAmount / splitCount;
 
     try {
       const expenses = await prisma.$transaction(
-        memberIds.map((userId: string) => 
+        memberIds.map((memberId: string) => 
           prisma.expense.create({
             data: {
               amount: individualAmount,
               description: `${description} (Split)`,
               category,
               date: new Date(date),
-              userId,
+              userId: memberId,
               groupId,
+              creatorId: userId,
               type: 'expense'
             }
           })

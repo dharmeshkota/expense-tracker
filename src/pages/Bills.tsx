@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle2, Circle, AlertCircle, Plus, Trash2, Receipt, Calendar as CalendarIcon } from 'lucide-react';
+import { CheckCircle2, Circle, AlertCircle, Plus, Trash2, Receipt, Calendar as CalendarIcon, History } from 'lucide-react';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useStore } from '@/store/useStore';
@@ -38,10 +38,20 @@ export default function Bills() {
     resolver: zodResolver(billSchema),
   });
 
+  const [showHistory, setShowHistory] = useState(false);
+
   const fetchBills = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch('/api/bills');
+      const now = new Date();
+      const month = now.getMonth() + 1;
+      const year = now.getFullYear();
+      
+      const endpoint = showHistory 
+        ? `/api/bills` 
+        : `/api/bills?month=${month}&year=${year}&allUnpaid=true`;
+
+      const res = await fetch(endpoint);
       if (res.ok) {
         const data = await res.json();
         setBills(data);
@@ -55,7 +65,7 @@ export default function Bills() {
 
   useEffect(() => {
     fetchBills();
-  }, []);
+  }, [showHistory]);
 
   const handleTogglePaid = async (id: string, currentStatus: boolean) => {
     // Optimistic update
@@ -139,8 +149,8 @@ export default function Bills() {
   const unpaidUpcoming = bills.filter(b => !b.isPaid && b.dueDate >= today && b.dueDate <= today + 5);
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500 pb-10">
-      <div className="relative overflow-hidden rounded-3xl bg-primary/5 p-6 md:p-8 border border-primary/10">
+    <div className="space-y-8 animate-in fade-in duration-500 w-full max-w-full overflow-x-hidden pb-10">
+      <div className="relative overflow-hidden rounded-3xl bg-primary/5 p-4 md:p-8 border border-primary/10">
         <div className="absolute top-0 right-0 -mt-4 -mr-4 h-32 w-32 rounded-full bg-primary/10 blur-3xl" />
         <div className="absolute bottom-0 left-0 -mb-4 -ml-4 h-24 w-24 rounded-full bg-primary/10 blur-2xl" />
         
@@ -148,21 +158,34 @@ export default function Bills() {
           <div className="space-y-1">
             <div className="flex items-center gap-2 text-primary">
               <Receipt className="h-5 w-5" />
-              <span className="text-xs font-black uppercase tracking-widest">Subscriptions</span>
+              <span className="text-[10px] font-black uppercase tracking-[0.2em]">Subscriptions</span>
             </div>
             <h1 className="text-3xl md:text-4xl font-black tracking-tight text-foreground">Recurring Bills</h1>
-            <p className="text-sm md:text-base text-muted-foreground max-w-md">
-              Keep track of your monthly commitments and never miss a payment.
+            <p className="text-xs md:text-sm text-muted-foreground max-w-md font-medium opacity-70">
+              {format(new Date(), 'MMMM yyyy')} • Tracking your monthly commitments.
             </p>
           </div>
           
-          <Button 
-            onClick={() => setIsAddOpen(true)} 
-            className="rounded-xl h-11 px-6 gap-2 shadow-lg shadow-primary/20 font-bold transition-all hover:scale-105 active:scale-95"
-          >
-            <Plus className="h-4 w-4" />
-            <span>Add New Bill</span>
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button 
+              variant="outline"
+              onClick={() => setShowHistory(!showHistory)}
+              className={cn(
+                "rounded-xl h-11 px-4 gap-2 font-bold transition-all text-xs uppercase tracking-widest",
+                showHistory ? "bg-primary/20 text-primary border-primary/30" : "text-muted-foreground"
+              )}
+            >
+              <History className="h-4 w-4" />
+              <span>{showHistory ? "Hide History" : "Full History"}</span>
+            </Button>
+            <Button 
+              onClick={() => setIsAddOpen(true)} 
+              className="rounded-xl h-11 px-6 gap-2 shadow-lg shadow-primary/20 font-bold transition-all hover:scale-105 active:scale-95 text-xs uppercase tracking-widest"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Add Bill</span>
+            </Button>
+          </div>
         </header>
       </div>
 
@@ -178,7 +201,7 @@ export default function Bills() {
         </div>
       )}
 
-      <div className="grid gap-4">
+      <div className="grid gap-4 px-0.5">
         {isLoading ? (
           Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="h-24 rounded-2xl bg-muted animate-pulse" />
@@ -186,8 +209,8 @@ export default function Bills() {
         ) : bills.length > 0 ? (
           bills.map((bill) => (
             <Card key={bill.id} className={cn(
-              "border-none shadow-sm transition-all duration-200 rounded-2xl overflow-hidden",
-              bill.isPaid ? "bg-muted/30 opacity-60" : "bg-card hover:shadow-md"
+              "border border-border/50 shadow-sm transition-all duration-200 rounded-2xl overflow-hidden",
+              bill.isPaid ? "bg-muted/10 opacity-60" : "bg-card hover:shadow-md hover:border-primary/20"
             )}>
               <CardContent className="p-4 md:p-6 flex flex-row items-center justify-between gap-4">
                 <div className="flex items-center space-x-3 md:space-x-4 min-w-0">

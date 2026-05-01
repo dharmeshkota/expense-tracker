@@ -12,12 +12,16 @@ model User {
   email         String?         @unique
   password      String?
   image         String?
+  currency      String          @default("USD")
+  monthlyBudget Float           @default(3000)
+  theme         String          @default("system")
   expenses      Expense[]
   recurringBills RecurringBill[]
   budgets       Budget[]
   categories    Category[]
   groups        GroupMember[]
   ownedGroups   Group[]        @relation("GroupOwner")
+  createdExpenses Expense[]    @relation("ExpenseCreator")
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 }
@@ -55,6 +59,8 @@ model Expense {
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   groupId     String?
+  creatorId   String?
+  creator     User?    @relation("ExpenseCreator", fields: [creatorId], references: [id])
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -99,11 +105,4 @@ model Budget {
   updatedAt   DateTime @updatedAt
 
   @@unique([userId, month, year])
-}
-
-model Session {
-  id        String   @id
-  sid       String   @unique
-  data      String
-  expiresAt DateTime
 }

@@ -2,6 +2,7 @@ import { Home, PieChart, Receipt, Settings, LogOut, Wallet, LayoutDashboard, Bar
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useStore } from '@/store/useStore';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -82,7 +83,7 @@ export function Sidebar() {
   const { user } = useStore();
 
   return (
-    <aside className="hidden md:flex flex-col w-64 border-r bg-card h-screen sticky top-0">
+    <aside className="hidden md:flex flex-col w-64 border-r bg-card h-screen fixed left-0 top-0 z-40">
       <div className="p-6 flex items-center space-x-3">
         <div className="h-10 w-10 bg-gradient-to-br from-primary to-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-primary/20">
           <Wallet className="h-6 w-6 text-primary-foreground" />
@@ -95,13 +96,16 @@ export function Sidebar() {
 
       {user && (
         <div className="px-6 mb-6">
-          <div className="flex items-center space-x-3 p-3 rounded-xl bg-muted/50">
-            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
-              {user.name.charAt(0)}
-            </div>
+          <div className="flex items-center space-x-3 p-3 rounded-xl bg-muted/50 transition-all hover:bg-muted group">
+            <Avatar className="h-10 w-10 border-2 border-background shadow-sm transition-transform group-hover:scale-105">
+              <AvatarImage src={user.image} />
+              <AvatarFallback className="text-sm font-black bg-primary/10 text-primary">
+                {user.name.charAt(0)}
+              </AvatarFallback>
+            </Avatar>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold truncate">{user.name}</p>
-              <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+              <p className="text-sm font-bold truncate text-foreground">{user.name}</p>
+              <p className="text-[10px] text-muted-foreground truncate font-medium opacity-70">{user.email}</p>
             </div>
           </div>
         </div>
@@ -131,7 +135,11 @@ export function Sidebar() {
 
       <div className="p-4 border-t">
         <button 
-          onClick={() => fetch('/api/auth/logout', { method: 'POST' }).then(() => window.location.reload())}
+          onClick={async () => {
+            await fetch('/api/auth/logout', { method: 'POST' });
+            localStorage.removeItem('expense-flow-storage');
+            window.location.href = '/login';
+          }}
           className="flex items-center space-x-3 px-3 py-2.5 w-full text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl transition-colors"
         >
           <LogOut className="h-5 w-5" />

@@ -60,7 +60,7 @@ interface AppState {
   addBill: (bill: Bill) => void;
   toggleBillPaid: (id: string) => void;
   settings: Settings;
-  updateSettings: (settings: Partial<Settings>) => void;
+  updateSettings: (settings: Partial<Settings>, syncWithServer?: boolean) => void;
   dashboardStats: any;
   setDashboardStats: (stats: any) => void;
   insightStats: any;
@@ -82,7 +82,19 @@ export const useStore = create<AppState>()(
   persist(
     (set) => ({
       user: null,
-      setUser: (user) => set({ user }),
+      setUser: (user) => set((state) => {
+        // If user changed or logged out, clear non-persistent global state
+        if (state.user?.id !== user?.id) {
+          return { 
+            user,
+            expenses: [],
+            bills: [],
+            dashboardStats: null,
+            insightStats: null
+          };
+        }
+        return { user };
+      }),
       isLoading: true,
       setIsLoading: (loading) => set({ isLoading: loading }),
       expenses: [],
@@ -108,9 +120,19 @@ export const useStore = create<AppState>()(
         currency: 'USD',
         theme: 'system',
       },
-      updateSettings: (newSettings) => set((state) => ({
-        settings: { ...state.settings, ...newSettings }
-      })),
+      updateSettings: (newSettings, syncWithServer = false) => {
+        set((state) => ({
+          settings: { ...state.settings, ...newSettings }
+        }));
+        
+        if (syncWithServer) {
+          fetch('/api/settings', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newSettings),
+          });
+        }
+      },
       dashboardStats: null,
       setDashboardStats: (stats) => set({ dashboardStats: stats }),
       insightStats: null,

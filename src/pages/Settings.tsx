@@ -38,12 +38,23 @@ export default function Settings() {
     updateSettings({
       monthlySalary: parseFloat(salary),
       monthlyBudget: parseFloat(budget),
-    });
+    }, true);
     toast.success('Financial settings updated!');
   };
 
   const handleLogout = () => {
-    fetch('/api/auth/logout', { method: 'POST' }).then(() => window.location.reload());
+    fetch('/api/auth/logout', { method: 'POST' }).then(() => {
+      localStorage.removeItem('expense-flow-storage');
+      window.location.reload();
+    });
+  };
+
+  const setCurrency = (val: string) => {
+    updateSettings({ currency: val }, true);
+  };
+
+  const setTheme = (val: any) => {
+    updateSettings({ theme: val }, true);
   };
 
   const handleResetData = async () => {
@@ -196,7 +207,7 @@ export default function Settings() {
                 </Label>
                 <Select 
                   value={settings.currency} 
-                  onValueChange={(val) => updateSettings({ currency: val })}
+                  onValueChange={setCurrency}
                 >
                 <SelectTrigger className="w-full sm:w-[240px] rounded-xl bg-muted/50 border border-border/50 h-11 font-bold hover:bg-muted transition-all">
                     <SelectValue placeholder="Select currency" />
@@ -227,7 +238,7 @@ export default function Settings() {
                   ].map((t) => (
                     <button
                       key={t.id}
-                      onClick={() => updateSettings({ theme: t.id as any })}
+                      onClick={() => setTheme(t.id as any)}
                       className={cn(
                         "flex flex-col items-center justify-center gap-1.5 py-2.5 rounded-xl transition-all",
                         settings.theme === t.id 

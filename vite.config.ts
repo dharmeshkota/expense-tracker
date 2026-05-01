@@ -13,7 +13,8 @@ export default defineConfig(({ mode }) => {
       VitePWA({
         registerType: 'autoUpdate',
         workbox: {
-          navigateFallbackDenylist: [/^\/api/], 
+          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5MB
+          navigateFallbackDenylist: [/^\/api/],
         },
         includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
         manifest: {
