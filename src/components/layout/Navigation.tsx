@@ -1,8 +1,9 @@
-import { Home, PieChart, Receipt, Settings, LogOut, Wallet, LayoutDashboard, BarChart3, Tag, Users, MoreHorizontal } from 'lucide-react';
+import { Home, PieChart, Receipt, Settings, LogOut, Wallet, LayoutDashboard, BarChart3, Tag, Users, MoreHorizontal, Lock as VaultLock, Unlock } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useStore } from '@/store/useStore';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { toast } from 'sonner';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,7 +23,15 @@ const navItems = [
 
 export function BottomNav() {
   const location = useLocation();
+  const { vaultKey, setVaultKey, setIsVaultGuardOpen, settings } = useStore();
   
+  const handleLockVault = () => {
+    setVaultKey(null);
+    toast.success('Vault locked and key cleared from memory');
+  };
+
+  const isVaultEnabled = settings.useVault;
+
   // Main items to show directly in the bar
   const mainItems = navItems.slice(0, 4);
   // Items to hide under the "More" menu
@@ -53,7 +62,21 @@ export function BottomNav() {
           <MoreHorizontal className="h-5 w-5" />
           <span className="text-[10px] font-bold">More</span>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" side="top" className="w-48 p-2 rounded-2xl mb-2 ml-2 shadow-xl border-muted bg-card/95 backdrop-blur-md overflow-hidden">
+        <DropdownMenuContent align="end" side="top" className="w-48 p-2 rounded-2xl mb-2 ml-2 shadow-xl border-muted bg-card/95 backdrop-blur-md overflow-hidden space-y-1">
+          {isVaultEnabled && (
+            <DropdownMenuItem className="p-0">
+              <button 
+                onClick={vaultKey ? handleLockVault : () => setIsVaultGuardOpen(true)}
+                className={cn(
+                  "flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors w-full font-bold text-xs uppercase tracking-widest",
+                  vaultKey ? "text-emerald-500 bg-emerald-500/5 hover:bg-emerald-500/10" : "text-amber-500 bg-amber-500/5 hover:bg-amber-500/10"
+                )}
+              >
+                {vaultKey ? <VaultLock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
+                <span>{vaultKey ? "Vault Active" : "Open Vault"}</span>
+              </button>
+            </DropdownMenuItem>
+          )}
           {moreItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.href;
@@ -80,7 +103,14 @@ export function BottomNav() {
 
 export function Sidebar() {
   const location = useLocation();
-  const { user } = useStore();
+  const { user, vaultKey, setVaultKey, setIsVaultGuardOpen, settings } = useStore();
+
+  const handleLockVault = () => {
+    setVaultKey(null);
+    toast.success('Vault locked and key cleared from memory');
+  };
+
+  const isVaultEnabled = settings.useVault;
 
   return (
     <aside className="hidden md:flex flex-col w-64 border-r bg-card h-screen fixed left-0 top-0 z-40">
@@ -133,7 +163,29 @@ export function Sidebar() {
         })}
       </nav>
 
-      <div className="p-4 border-t">
+      <div className="p-4 border-t space-y-2">
+        {isVaultEnabled && (
+          <button 
+            onClick={vaultKey ? handleLockVault : () => setIsVaultGuardOpen(true)}
+            className={cn(
+              "flex items-center space-x-3 px-3 py-2.5 w-full rounded-xl transition-all font-black text-[10px] uppercase tracking-[0.2em] group shadow-sm",
+              vaultKey 
+                ? "text-emerald-500 bg-emerald-500/5 hover:bg-emerald-500/10 border border-emerald-500/10" 
+                : "text-amber-500 bg-amber-500/5 hover:bg-amber-500/10 border border-amber-500/10"
+            )}
+          >
+            <div className={cn(
+              "h-6 w-6 rounded-lg flex items-center justify-center transition-colors",
+              vaultKey ? "bg-emerald-500/20 text-emerald-500" : "bg-amber-500/20 text-amber-500"
+            )}>
+              {vaultKey ? <VaultLock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
+            </div>
+            <span className="flex-1 text-left">{vaultKey ? "Vault Active" : "Open Vault"}</span>
+            {vaultKey && (
+              <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+            )}
+          </button>
+        )}
         <button 
           onClick={async () => {
             await fetch('/api/auth/logout', { method: 'POST' });

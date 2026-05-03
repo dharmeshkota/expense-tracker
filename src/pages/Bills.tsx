@@ -13,6 +13,8 @@ import { format } from 'date-fns';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
+import { encryptData, decryptData, isEncrypted } from '@/lib/encryption';
+import { VaultGuard } from '@/components/VaultGuard';
 
 const billSchema = z.object({
   name: z.string().min(1, "Bill name is required"),
@@ -30,7 +32,7 @@ const billSchema = z.object({
 type BillFormValues = z.infer<typeof billSchema>;
 
 export default function Bills() {
-  const { bills, setBills, addBill, toggleBillPaid, settings } = useStore();
+  const { bills, setBills, addBill, toggleBillPaid, settings, vaultKey } = useStore();
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -53,8 +55,25 @@ export default function Bills() {
 
       const res = await fetch(endpoint);
       if (res.ok) {
-        const data = await res.json();
-        setBills(data);
+        const rawBills = await res.json();
+        
+        // Decrypt bills ONLY if vault is enabled and key is present
+        const decryptedBills = rawBills.map((b: any) => {
+          if (vaultKey && isEncrypted(b.name)) {
+            const decrypted = decryptData(b.name, vaultKey as string);
+            if (decrypted && typeof decrypted === 'object' && decrypted.isEncryptedViaVault) {
+              return {
+                ...b,
+                amount: decrypted.amount,
+                name: decrypted.name,
+                isActuallyEncrypted: true
+              };
+            }
+          }
+          return b;
+        });
+
+        setBills(decryptedBills);
       }
     } catch (error) {
       console.error('Failed to fetch bills:', error);
@@ -65,7 +84,7 @@ export default function Bills() {
 
   useEffect(() => {
     fetchBills();
-  }, [showHistory]);
+  }, [showHistory, vaultKey, settings.useVault]);
 
   const handleTogglePaid = async (id: string, currentStatus: boolean) => {
     // Optimistic update
@@ -113,14 +132,25 @@ export default function Bills() {
   };
 
   const onSubmit = async (values: BillFormValues) => {
-    const data = {
-      name: values.name,
-      amount: parseFloat(values.amount),
+    const rawData: any = {
       dueDate: parseInt(values.dueDate),
       month: new Date().getMonth() + 1,
       year: new Date().getFullYear(),
       isPaid: false
     };
+
+    if (settings.useVault && vaultKey) {
+      const sensitiveData = {
+        name: values.name,
+        amount: parseFloat(values.amount),
+        isEncryptedViaVault: true
+      };
+      rawData.name = encryptData(JSON.stringify(sensitiveData), vaultKey);
+      rawData.amount = 0; // Owner sees nothing
+    } else {
+      rawData.name = values.name;
+      rawData.amount = parseFloat(values.amount);
+    }
 
     // Close immediately for 'instant' feel
     setIsAddOpen(false);
@@ -130,12 +160,27 @@ export default function Bills() {
       const res = await fetch('/api/bills', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify(rawData),
       });
 
       if (res.ok) {
         const newBill = await res.json();
-        addBill(newBill);
+        
+        // Decrect the local response immediately so it looks right in the UI
+        let finalBill = newBill;
+        if (isEncrypted(newBill.name)) {
+          const decrypted = decryptData(newBill.name, vaultKey as string);
+          if (decrypted && typeof decrypted === 'object' && decrypted.isEncryptedViaVault) {
+            finalBill = {
+              ...newBill,
+              amount: decrypted.amount,
+              name: decrypted.name,
+              isActuallyEncrypted: true
+            };
+          }
+        }
+
+        addBill(finalBill);
         toast.success('Bill added successfully');
       } else {
         toast.error('Failed to add bill');
@@ -149,6 +194,7 @@ export default function Bills() {
   const unpaidUpcoming = bills.filter(b => !b.isPaid && b.dueDate >= today && b.dueDate <= today + 5);
 
   return (
+    <VaultGuard>
     <div className="space-y-8 animate-in fade-in duration-500 w-full max-w-full overflow-x-hidden pb-10">
       <div className="relative overflow-hidden rounded-3xl bg-primary/5 p-4 md:p-8 border border-primary/10">
         <div className="absolute top-0 right-0 -mt-4 -mr-4 h-32 w-32 rounded-full bg-primary/10 blur-3xl" />
@@ -329,5 +375,6 @@ export default function Bills() {
         </DialogContent>
       </Dialog>
     </div>
+    </VaultGuard>
   );
 }

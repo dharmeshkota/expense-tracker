@@ -12,9 +12,11 @@ import { toast } from 'sonner';
 import { useStore } from '@/store/useStore';
 import { StatCard } from '@/components/dashboard/StatCard';
 import { cn, formatCurrency, formatCurrencyForPDF } from '@/lib/utils';
+import { VaultGuard } from '@/components/VaultGuard';
+import { decryptData, isEncrypted } from '@/lib/encryption';
 
 export default function Insights() {
-  const { expenses, settings, categories, setCategories, insightStats, setInsightStats } = useStore();
+  const { expenses, settings, categories, setCategories, insightStats, setInsightStats, vaultKey } = useStore();
   const chartRef = useRef<HTMLDivElement>(null);
   const [isExporting, setIsExporting] = useState(false);
   
@@ -39,16 +41,82 @@ export default function Insights() {
       setIsLoading(true);
       const [year, month] = timeframe.split('-');
       try {
-        const [statsRes, categoriesRes] = await Promise.all([
+        const [statsRes, categoriesRes, rawExpensesRes] = await Promise.all([
           fetch(`/api/stats?month=${month}&year=${year}&period=${periodType}`),
-          fetch('/api/categories')
+          fetch('/api/categories'),
+          fetch(`/api/expenses?month=${month}&year=${year}&limit=1000`)
         ]);
 
-        if (statsRes.ok) {
-          setInsightStats(await statsRes.json());
-        }
+        let cats = [];
         if (categoriesRes.ok) {
-          setCategories(await categoriesRes.json());
+          cats = await categoriesRes.json();
+          setCategories(cats);
+        }
+
+        if (statsRes.ok && rawExpensesRes.ok) {
+          const serverStats = await statsRes.json();
+          const expensesData = await rawExpensesRes.json();
+          const rawExpenses = expensesData.expenses;
+
+          // Decrypt expenses if vaultKey is available
+          const decryptedExpenses = rawExpenses.map((e: any) => {
+            if (vaultKey && isEncrypted(e.description)) {
+              // Try personal vault key first
+              let decrypted = decryptData(e.description, vaultKey as string);
+              
+              // If decryption fails and it's a group expense, try group-shared key (derived from groupId)
+              if (!decrypted && e.groupId) {
+                decrypted = decryptData(e.description, e.groupId);
+              }
+
+              if (decrypted && typeof decrypted === 'object' && decrypted.isEncryptedViaVault) {
+                return {
+                  ...e,
+                  amount: decrypted.amount,
+                  description: decrypted.description,
+                  isActuallyEncrypted: true
+                };
+              }
+            }
+            return e;
+          });
+
+          // Recalculate stats locally if vault mode is active and key is present
+          if (vaultKey) {
+            const excludedCategoryNames = cats
+              .filter((c: any) => c.excludeFromBudget)
+              .map((c: any) => c.name);
+
+            const totalIncome = decryptedExpenses
+              .filter((e: any) => e.type === 'income')
+              .reduce((sum: number, e: any) => sum + e.amount, 0);
+
+            const totalSpent = decryptedExpenses
+              .filter((e: any) => e.type === 'expense')
+              .reduce((sum: number, e: any) => sum + e.amount, 0);
+
+            const budgetSpent = decryptedExpenses
+              .filter((e: any) => e.type === 'expense' && !excludedCategoryNames.includes(e.category))
+              .reduce((sum: number, e: any) => sum + e.amount, 0);
+
+            const categoryBreakdown: Record<string, number> = decryptedExpenses
+              .filter((e: any) => e.type === 'expense')
+              .reduce((acc: any, e: any) => {
+                acc[e.category] = (acc[e.category] || 0) + e.amount;
+                return acc;
+              }, {});
+
+            setInsightStats({
+              ...serverStats,
+              totalIncome,
+              totalSpent,
+              budgetSpent,
+              remaining: (serverStats.totalSalary || 0) + totalIncome - totalSpent,
+              categoryBreakdown: Object.entries(categoryBreakdown).map(([name, value]) => ({ name, value })),
+            });
+          } else {
+            setInsightStats(serverStats);
+          }
         }
       } catch (error) {
         console.error('Failed to fetch insights:', error);
@@ -57,7 +125,7 @@ export default function Insights() {
       }
     };
     fetchStats();
-  }, [timeframe, periodType, setInsightStats, setCategories]);
+  }, [timeframe, periodType, setInsightStats, setCategories, vaultKey]);
 
   const stats = insightStats;
 
@@ -88,121 +156,226 @@ export default function Insights() {
       const res = await fetch(`/api/expenses?month=${month}&year=${year}&limit=10000`);
       if (!res.ok) throw new Error('Failed to fetch full data for report');
       const data = await res.json();
-      const allExpenses = data.expenses;
+      const rawExpenses = data.expenses;
+
+      // Decrypt for the report if vault key is available
+      const allExpenses = rawExpenses.map((e: any) => {
+        if (vaultKey && isEncrypted(e.description)) {
+          let decrypted = decryptData(e.description, vaultKey as string);
+          if (!decrypted && e.groupId) {
+            decrypted = decryptData(e.description, e.groupId);
+          }
+
+          if (decrypted && typeof decrypted === 'object' && decrypted.isEncryptedViaVault) {
+            return {
+              ...e,
+              amount: decrypted.amount,
+              description: decrypted.description + (e.description.includes(' (Split)') ? ' (Split)' : '')
+            };
+          }
+        }
+        return e;
+      });
 
       const doc = new jsPDF('p', 'mm', 'a4');
       const now = new Date();
       const targetDate = new Date(parseInt(year), parseInt(month) - 1, 1);
       const monthName = format(targetDate, 'MMMM yyyy');
 
-      // Header
-      doc.setFillColor(99, 102, 241); // Indigo primary
-      doc.rect(0, 0, 210, 40, 'F');
+      // --- PAGE 1: COVER & EXECUTIVE SUMMARY ---
+      // Branding Header
+      doc.setFillColor(30, 41, 59); // Slate-800
+      doc.rect(0, 0, 210, 50, 'F');
       
-      doc.setFontSize(24);
+      doc.setFontSize(28);
       doc.setTextColor(255, 255, 255);
       doc.setFont('helvetica', 'bold');
-      doc.text('Financial Insights Report', 20, 25);
+      doc.text('Financial Statement', 20, 25);
       
-      doc.setFontSize(10);
+      doc.setFontSize(11);
       doc.setFont('helvetica', 'normal');
-      doc.text(`${monthName} | Generated on ${format(now, 'PPP p')}`, 20, 32);
+      doc.setTextColor(148, 163, 184); // Slate-400
+      doc.text(`${monthName.toUpperCase()} • CONSOLIDATED REPORT`, 20, 34);
+      doc.text(`ISSUED: ${format(now, 'PPP')}`, 20, 40);
 
-      // Summary Stats
-      doc.setTextColor(0, 0, 0);
-      doc.setFontSize(14);
+      // Accent Line
+      doc.setFillColor(99, 102, 241); // Indigo-500
+      doc.rect(0, 48, 210, 2, 'F');
+
+      // Summary Title
+      doc.setTextColor(30, 41, 59);
+      doc.setFontSize(18);
       doc.setFont('helvetica', 'bold');
-      doc.text('Financial Summary', 20, 55);
-      
+      doc.text('Executive Summary', 20, 70);
+
+      // Summary Table
       autoTable(doc, {
-        startY: 60,
-        head: [['Metric', 'Value']],
+        startY: 75,
+        head: [['Performance Indicator', 'Amount', 'Status']],
         body: [
-          ['Total Income', formatCurrencyForPDF(allExpenses.filter((e: any) => e.type === 'income').reduce((sum: number, e: any) => sum + e.amount, 0) + (stats.totalSalary || 0), settings.currency)],
-          ['Total Expenses', formatCurrencyForPDF(allExpenses.filter((e: any) => e.type === 'expense').reduce((sum: number, e: any) => sum + e.amount, 0), settings.currency)],
-          ['Budget Spent', formatCurrencyForPDF(stats.budgetSpent, settings.currency)],
-          ['Remaining Balance', formatCurrencyForPDF(stats.remaining, settings.currency)],
-          ['Budget Utilization', `${((stats.budgetSpent / settings.monthlyBudget) * 100).toFixed(1)}%`],
+          ['Total Earned (Income)', formatCurrencyForPDF(allExpenses.filter((e: any) => e.type === 'income').reduce((sum: number, e: any) => sum + e.amount, 0) + (stats.totalSalary || 0), settings.currency), 'Credit'],
+          ['Total Outflow (Expenses)', formatCurrencyForPDF(allExpenses.filter((e: any) => e.type === 'expense').reduce((sum: number, e: any) => sum + e.amount, 0), settings.currency), 'Debit'],
+          ['Budget Allocation Spent', formatCurrencyForPDF(stats.budgetSpent, settings.currency), stats.budgetSpent > (settings.monthlyBudget * 0.9) ? 'Critical' : 'Stable'],
+          ['Net Liquidity (Remaining)', formatCurrencyForPDF(stats.remaining, settings.currency), stats.remaining < 0 ? 'Deficit' : 'Surplus'],
+          ['Efficiency (Utilization)', `${((stats.budgetSpent / settings.monthlyBudget) * 100).toFixed(1)}%`, 'Operational'],
         ],
         theme: 'striped',
-        headStyles: { fillColor: [99, 102, 241] },
-        margin: { left: 20, right: 20 },
-        styles: { font: 'helvetica' }
+        headStyles: { 
+          fillColor: [30, 41, 59],
+          fontSize: 11,
+          fontStyle: 'bold',
+          cellPadding: 5
+        },
+        styles: { 
+          font: 'helvetica',
+          fontSize: 10,
+          cellPadding: 5,
+          textColor: [51, 65, 85]
+        },
+        columnStyles: {
+          0: { fontStyle: 'bold', cellWidth: 80 },
+          1: { halign: 'right', fontStyle: 'bold' },
+          2: { halign: 'center' }
+        },
+        margin: { left: 20, right: 20 }
       });
 
-      // Capture Chart using html-to-image
+      // --- CAPTURE & DASHBOARD SECTION ---
       if (chartRef.current) {
+        // High-Fidelity Capture with forced Desktop Resolution and fixed aspect ratio
+        // to prevent "voids" on mobile and "clipping" on desktop
         const imgData = await toPng(chartRef.current, {
           cacheBust: true,
-          // Optional: Match the background to your theme to prevent visual gaps
-          backgroundColor: document.documentElement.classList.contains('dark') ? '#020817' : '#ffffff',
+          backgroundColor: '#020617',
           pixelRatio: 2,
+          width: 1400,
+          height: 600,
+          style: {
+            width: '1400px',
+            height: '600px',
+            display: 'grid',
+            gridTemplateColumns: 'repeat(2, 1fr)',
+            gap: '32px',
+            padding: '40px',
+            background: '#020617',
+            margin: '0',
+          }
         });
         
         const imgProps = doc.getImageProperties(imgData);
         const pageWidth = doc.internal.pageSize.getWidth();
-        const pageHeight = doc.internal.pageSize.getHeight();
         const margin = 20;
         
-        // Initial desired dimensions (full width minus margins)
-        let pdfWidth = pageWidth - (margin * 2);
-        let pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-        
-        let startY = (doc as any).lastAutoTable.finalY + 20;
+        const pdfWidth = pageWidth - (margin * 2);
+        const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+        let startY = (doc as any).lastAutoTable.finalY + 25;
 
-        // If the image is too tall to fit on the rest of the first page...
-        if (startY + pdfHeight > pageHeight - margin) {
-          // 1. Move it to a brand new page
-          doc.addPage();
-          startY = margin + 10;
-          
-          // 2. If it's STILL too tall for a full page (happens on mobile layouts), scale it down
-          const maxAvailableHeight = pageHeight - startY - margin;
-          if (pdfHeight > maxAvailableHeight) {
-            pdfHeight = maxAvailableHeight;
-            // Proportionately scale the width down too
-            pdfWidth = (imgProps.width * pdfHeight) / imgProps.height;
-          }
-        }
-        
-        // Center horizontally in case we scaled it down
-        const xPos = (pageWidth - pdfWidth) / 2;
-        
-        doc.text('Spending by Category', margin, startY - 5);
-        doc.addImage(imgData, 'PNG', xPos, startY, pdfWidth, pdfHeight);
-        
-        // Detailed Transactions on new page
-        doc.addPage();
+        // Visual separator
+        doc.setDrawColor(226, 232, 240);
+        doc.line(20, startY - 10, 190, startY - 10);
+
+        doc.setFontSize(16);
         doc.setFont('helvetica', 'bold');
-        doc.text('Detailed Transactions', 20, 20);
+        doc.setTextColor(30, 41, 59);
+        doc.text('Spending Intelligence Visualization', margin, startY);
         
-        autoTable(doc, {
-          startY: 25,
-          head: [['Date', 'Type', 'Category', 'Description', 'Amount']],
-          body: allExpenses.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((e: any) => [
-            format(new Date(e.date), 'MMM dd, yyyy'),
-            e.type === 'income' ? 'Income' : 'Expense',
-            e.category,
-            e.description,
-            formatCurrencyForPDF(e.amount, settings.currency)
-          ]),
-          theme: 'grid',
-          styles: { fontSize: 8, font: 'helvetica' },
-          headStyles: { fillColor: [100, 100, 100] }
-        });
+        // Background card for image - matched to the capture background
+        doc.setFillColor(2, 6, 23); 
+        doc.rect(margin, startY + 5, pdfWidth, pdfHeight, 'F');
+        doc.addImage(imgData, 'PNG', margin, startY + 5, pdfWidth, pdfHeight);
       }
 
-      doc.save(`Financial_Report_${monthName.replace(' ', '_')}.pdf`);
-      toast.success('Financial report downloaded!');
+      // --- TRANSACTIONS JOURNAL ---
+      doc.addPage();
+      
+      // Page Header for Journal
+      doc.setFillColor(30, 41, 59);
+      doc.rect(0, 0, 210, 20, 'F');
+      
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(16);
+      doc.setTextColor(255, 255, 255);
+      doc.text('Transaction Ledger Journal', 20, 13);
+      
+      doc.setFontSize(14);
+      doc.setTextColor(30, 41, 59);
+      doc.text('Detailed Activity Record', 20, 35);
+      
+      doc.setFontSize(9);
+      doc.setTextColor(100, 116, 139);
+      doc.text(`Comprehensive record of all entries for ${monthName}`, 20, 41);
+
+      autoTable(doc, {
+        startY: 48,
+        head: [['Date', 'Classification', 'Category', 'Description', 'Net Value']],
+        body: allExpenses.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((e: any) => [
+          format(new Date(e.date), 'MMM dd, yyyy'),
+          e.type === 'income' ? 'CREDIT' : 'DEBIT',
+          e.category.toUpperCase(),
+          e.description.length > 70 ? e.description.substring(0, 67) + '...' : e.description,
+          `${e.type === 'income' ? '+' : '-'}${formatCurrencyForPDF(e.amount, settings.currency)}`
+        ]),
+        theme: 'striped',
+        styles: { 
+          fontSize: 8.5, 
+          font: 'helvetica',
+          cellPadding: 4,
+          textColor: [51, 65, 85]
+        },
+        headStyles: { 
+          fillColor: [30, 41, 59],
+          textColor: [255, 255, 255],
+          fontSize: 10,
+          fontStyle: 'bold',
+          halign: 'center',
+          cellPadding: 6
+        },
+        columnStyles: {
+          0: { cellWidth: 32, halign: 'center' },
+          1: { cellWidth: 25, halign: 'center', fontStyle: 'bold' },
+          2: { cellWidth: 35, fontStyle: 'bold' },
+          3: { cellWidth: 'auto' },
+          4: { cellWidth: 35, halign: 'right', fontStyle: 'bold' }
+        },
+        didParseCell: (data) => {
+          if (data.section === 'body' && data.column.index === 4) {
+            const val = data.cell.raw as string;
+            if (val.startsWith('+')) data.cell.styles.textColor = [16, 185, 129];
+            else if (val.startsWith('-')) data.cell.styles.textColor = [225, 29, 72];
+          }
+          if (data.section === 'body' && data.column.index === 1) {
+            const type = data.cell.raw as string;
+            if (type === 'CREDIT') data.cell.styles.textColor = [5, 150, 105];
+            else data.cell.styles.textColor = [71, 85, 105];
+          }
+        },
+        margin: { left: 20, right: 20 }
+      });
+
+      // --- GLOBAL FOOTER ---
+      const totalPages = (doc as any).internal.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(148, 163, 184);
+        doc.text(`Page ${i} of ${totalPages}`, 185, 290);
+        doc.text('© PRIVACY VAULT SECURED LEDGER • CONFIDENTIAL', 20, 290);
+        doc.setDrawColor(241, 245, 249);
+        doc.line(20, 286, 190, 286);
+      }
+
+      doc.save(`FINANCIAL_STATEMENT_${monthName.replace(' ', '_').toUpperCase()}.pdf`);
+      toast.success('High-fidelity report generated successfully!');
     } catch (error) {
       console.error('PDF Generation error:', error);
-      toast.error('Failed to generate PDF');
+      toast.error('Synthesis failure during PDF generation');
     } finally {
       setIsExporting(false);
     }
   };
 
   return (
+    <VaultGuard>
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
       <div className="relative overflow-hidden rounded-3xl bg-primary/5 p-6 md:p-8 border border-primary/10">
         <div className="absolute top-0 right-0 -mt-4 -mr-4 h-32 w-32 rounded-full bg-primary/10 blur-3xl" />
@@ -421,5 +594,6 @@ export default function Insights() {
         </Card>
       </div>
     </div>
+    </VaultGuard>
   );
 }

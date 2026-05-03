@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { useStore } from './store/useStore';
 import { Sidebar, BottomNav } from './components/layout/Navigation';
 import { Toaster } from '@/components/ui/sonner';
+import { VaultGuard } from './components/VaultGuard';
 import Dashboard from './pages/Dashboard';
 import Bills from './pages/Bills';
 import Settings from './pages/Settings';
@@ -83,6 +84,7 @@ function App() {
   return (
     <Router>
       <div className="flex min-h-screen bg-background font-sans selection:bg-primary/10 selection:text-primary overflow-x-hidden">
+        <VaultGuard mode="overlay" />
         <Sidebar />
         <main className="flex-1 md:pl-64 pb-16 md:pb-0 min-h-screen">
           <div className="max-w-7xl mx-auto p-4 md:p-8 lg:p-12">

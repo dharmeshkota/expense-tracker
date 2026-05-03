@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useStore } from '@/store/useStore';
 import { Button } from '@/components/ui/button';
-import { Search, Filter, Trash2, Download, Plus, Calendar as CalendarIcon, ChevronRight, X, Calendar, Wallet, TrendingUp, TrendingDown, ChevronLeft, Loader2 } from 'lucide-react';
+import { Search, Filter, Trash2, Download, Plus, Calendar as CalendarIcon, ChevronRight, X, Calendar, Wallet, TrendingUp, TrendingDown, ChevronLeft, Loader2, Lock as VaultLock } from 'lucide-react';
 import { format, subMonths, startOfMonth, endOfMonth } from 'date-fns';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -17,14 +17,26 @@ import {
   PaginationLink,
 } from "@/components/ui/pagination";
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { decryptData, isEncrypted } from '@/lib/encryption';
+import { VaultGuard } from '@/components/VaultGuard';
 
 export default function Transactions() {
-  const { categories, setCategories, settings } = useStore();
+  const { categories, setCategories, settings, vaultKey } = useStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const queryClient = useQueryClient();
+
+  const toggleRow = (id: string) => {
+    setExpandedRows(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
   
   // Date range state
   const [dateRange, setDateRange] = useState<{ start: string; end: string } | null>(null);
@@ -97,7 +109,7 @@ export default function Transactions() {
   }, []);
 
   const { data: transactionsData, isLoading, isFetching } = useQuery({
-    queryKey: ['expenses', timeframe, currentPage, dateRange],
+    queryKey: ['expenses', timeframe, currentPage, dateRange, vaultKey, settings.useVault],
     queryFn: async () => {
       const params = new URLSearchParams({
         page: currentPage.toString(),
@@ -125,9 +137,36 @@ export default function Transactions() {
         categoriesRes.json()
       ]);
 
+      // Decrypt data ONLY if vault key is present AND vault is enabled in settings
+      const decryptedExpenses = expensesData.expenses.map((e: any) => {
+        if (vaultKey && isEncrypted(e.description)) {
+          // Try personal vault key first
+          let decrypted = decryptData(e.description, vaultKey as string);
+          
+          // If decryption fails and it's a group expense, try group-shared key (derived from groupId)
+          if (!decrypted && e.groupId) {
+            decrypted = decryptData(e.description, e.groupId);
+          }
+
+          if (decrypted && typeof decrypted === 'object' && decrypted.isEncryptedViaVault) {
+            return {
+              ...e,
+              amount: decrypted.amount,
+              description: decrypted.description + (e.description.includes(' (Split)') ? ' (Split)' : ''),
+              isActuallyEncrypted: true
+            };
+          }
+        }
+        return e;
+      });
+
       setCategories(cats);
-      return expensesData;
+      return {
+        ...expensesData,
+        expenses: decryptedExpenses
+      };
     },
+    enabled: !settings.useVault || !!vaultKey,
     staleTime: 30000,
   });
 
@@ -191,7 +230,29 @@ export default function Transactions() {
       if (!res.ok) throw new Error('Failed to fetch all expenses');
       
       const data = await res.json();
-      const allExpenses = data.expenses;
+      const rawExpenses = data.expenses;
+
+      // Decrypt data for the report
+      const allExpenses = rawExpenses.map((e: any) => {
+        if (vaultKey && isEncrypted(e.description)) {
+          // Try personal vault key first
+          let decrypted = decryptData(e.description, vaultKey as string);
+          
+          // If decryption fails and it's a group expense, try group-shared key (derived from groupId)
+          if (!decrypted && e.groupId) {
+            decrypted = decryptData(e.description, e.groupId);
+          }
+
+          if (decrypted && typeof decrypted === 'object' && decrypted.isEncryptedViaVault) {
+            return {
+              ...e,
+              amount: decrypted.amount,
+              description: decrypted.description + (e.description.includes(' (Split)') ? ' (Split)' : '')
+            };
+          }
+        }
+        return e;
+      });
 
       const doc = new jsPDF('p', 'mm', 'a4');
       const now = new Date();
@@ -283,6 +344,7 @@ export default function Transactions() {
   };
 
   return (
+    <VaultGuard>
     <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500 w-full overflow-x-hidden">
       <div className="relative rounded-[1.25rem] md:rounded-[2.5rem] bg-[#0a0c14]/40 border border-primary/20 p-3.5 md:p-10 shadow-2xl shadow-primary/5 backdrop-blur-xl mb-4 overflow-hidden">
         {/* Background Glows */}
@@ -298,11 +360,11 @@ export default function Transactions() {
                 <div className="p-1.5 bg-primary/20 rounded-lg border border-primary/30 shadow-inner">
                   <Wallet className="h-4 w-4 md:h-5 md:w-5" />
                 </div>
-                <span className="text-xs font-black uppercase tracking-widest">Ledger Journal</span>
+                <span className="text-[10px] font-black uppercase tracking-[0.3em] opacity-90">Ledger Journal</span>
               </div>
               <div className="space-y-1">
-                <h1 className="text-3xl md:text-4xl font-black tracking-tight text-foreground leading-none">Expenses</h1>
-                <p className="text-sm md:text-base text-muted-foreground max-w-md">
+                <h1 className="text-3xl md:text-5xl font-black tracking-tight text-foreground leading-none">Expenses</h1>
+                <p className="text-xs md:text-base text-muted-foreground font-medium opacity-60 leading-relaxed max-w-md">
                   Spend velocity and historical tracking for your personal economy.
                 </p>
               </div>
@@ -541,83 +603,123 @@ export default function Transactions() {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b bg-muted/30">
-                <th className="px-6 py-5 text-xs font-black uppercase tracking-widest text-muted-foreground/60">Transaction</th>
-                <th className="px-6 py-5 text-xs font-black uppercase tracking-widest text-muted-foreground/60">Category</th>
-                <th className="px-6 py-5 text-xs font-black uppercase tracking-widest text-muted-foreground/60">Timestamp</th>
-                <th className="px-6 py-5 text-xs font-black uppercase tracking-widest text-muted-foreground/60 text-right">Value</th>
-                <th className="px-6 py-5 text-xs font-black uppercase tracking-widest text-muted-foreground/60 w-[80px]"></th>
+                <th className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60">Transaction Details</th>
+                <th className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60 text-center">Category</th>
+                <th className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60">Journal Date</th>
+                <th className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60 text-right">Value</th>
+                <th className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60 w-[80px]"></th>
               </tr>
             </thead>
             <tbody className="divide-y border-t-0">
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <tr key={i}>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center space-x-3">
-                        <div className="h-10 w-10 rounded-xl bg-muted animate-pulse" />
-                        <div className="h-4 w-32 bg-muted animate-pulse rounded" />
+                    <td className="px-6 py-5">
+                      <div className="flex items-center space-x-4">
+                        <div className="h-11 w-11 rounded-2xl bg-muted animate-pulse" />
+                        <div className="space-y-2">
+                          <div className="h-4 w-32 bg-muted animate-pulse rounded" />
+                          <div className="h-3 w-20 bg-muted animate-pulse rounded" />
+                        </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4">
-                      <div className="h-6 w-20 bg-muted animate-pulse rounded-full" />
+                    <td className="px-6 py-5">
+                      <div className="h-7 w-24 bg-muted animate-pulse rounded-full mx-auto" />
                     </td>
-                    <td className="px-6 py-4">
-                      <div className="h-4 w-24 bg-muted animate-pulse rounded" />
+                    <td className="px-6 py-5">
+                      <div className="h-4 w-28 bg-muted animate-pulse rounded" />
                     </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="h-4 w-16 bg-muted animate-pulse rounded ml-auto" />
+                    <td className="px-6 py-5 text-right">
+                      <div className="h-5 w-20 bg-muted animate-pulse rounded ml-auto" />
                     </td>
-                    <td className="px-6 py-4" />
+                    <td className="px-6 py-5" />
                   </tr>
                 ))
               ) : filteredExpenses.length > 0 ? (
                 filteredExpenses.map((expense, index) => {
                   const category = categories.find(c => c.name === expense.category);
                   const isIncome = expense.type === 'income';
+                  const isExpanded = expandedRows.has(expense.id);
+                  
                   return (
-                    <tr key={`${expense.id}-${index}`} className="group hover:bg-muted/30 transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center space-x-3">
+                    <tr key={`${expense.id}-${index}`} className="group hover:bg-muted/40 transition-all">
+                      <td className="px-6 py-5">
+                        <div className="flex items-center space-x-4">
                           <div 
-                            className="h-10 w-10 rounded-xl flex items-center justify-center text-white shadow-sm"
+                            className="h-11 w-11 rounded-2xl flex items-center justify-center text-white shadow-soft relative shrink-0"
                             style={{ backgroundColor: category?.color || (isIncome ? '#10b981' : '#64748b') }}
                           >
-                            {isIncome ? <TrendingUp className="h-5 w-5" /> : <span className="text-xs font-bold">{expense.category.charAt(0)}</span>}
+                            {isIncome ? <TrendingUp className="h-5 w-5" /> : <span className="text-sm font-black">{expense.category.charAt(0)}</span>}
+                            {expense.isActuallyEncrypted && (
+                              <div className="absolute -top-1.5 -right-1.5 bg-primary border-4 border-[#12141c] rounded-full p-1 shadow-lg">
+                                <VaultLock className="h-2.5 w-2.5 text-white" />
+                              </div>
+                            )}
                           </div>
-                          <span className="font-bold group-hover:text-primary transition-colors">
-                            {expense.description}
-                          </span>
+                          <div className="min-w-0 max-w-[280px]">
+                            <div 
+                              className={cn(
+                                "font-bold text-sm tracking-tight transition-colors cursor-pointer break-all",
+                                isExpanded ? "text-primary" : "truncate"
+                              )}
+                              onClick={() => toggleRow(expense.id)}
+                            >
+                              {expense.description}
+                            </div>
+                            <div className="flex items-center gap-2 mt-1">
+                                <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/40">{isIncome ? 'Credit' : 'Debit'}</span>
+                                {expense.description.length > 30 && (
+                                  <button 
+                                    onClick={() => toggleRow(expense.id)}
+                                    className="text-[9px] font-black uppercase text-primary/60 hover:text-primary transition-colors"
+                                  >
+                                    {isExpanded ? 'Collapse' : 'Show Full'}
+                                  </button>
+                                )}
+                            </div>
+                          </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground border">
+                      <td className="px-6 py-5 text-center">
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-muted/60 text-muted-foreground/80 border border-border/40">
                           {expense.category}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-sm text-muted-foreground">
-                        {format(new Date(expense.date), 'MMM dd, yyyy')}
+                      <td className="px-6 py-5">
+                        <div className="flex flex-col">
+                          <span className="text-[11px] font-bold text-foreground/80">
+                            {format(new Date(expense.date), 'MMM dd, yyyy')}
+                          </span>
+                        </div>
                       </td>
-                      <td className="px-6 py-4 text-right">
-                        <span className={cn("font-bold", isIncome ? "text-emerald-500" : "text-destructive")}>
+                      <td className="px-6 py-5 text-right">
+                        <span className={cn("text-base font-black tracking-tighter tabular-nums", isIncome ? "text-emerald-500" : "text-destructive")}>
                           {isIncome ? '+' : '-'}{formatCurrency(expense.amount, settings.currency)}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-right">
-                        <button 
-                          onClick={() => handleDelete(expense.id)}
-                          disabled={deleteMutation.isPending}
-                          className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50"
-                        >
-                          {deleteMutation.isPending && deleteMutation.variables === expense.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                        </button>
+                      <td className="px-6 py-5 text-right">
+                        <div className="flex items-center justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button 
+                            onClick={() => handleDelete(expense.id)}
+                            disabled={deleteMutation.isPending}
+                            className="p-2.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl transition-all disabled:opacity-50"
+                          >
+                            {deleteMutation.isPending && deleteMutation.variables === expense.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4.5 w-4.5" />}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
                 })
               ) : (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-muted-foreground">
-                    No transactions found.
+                  <td colSpan={5} className="px-6 py-20 text-center">
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="p-4 bg-muted/20 rounded-full border border-dashed border-muted-foreground/20">
+                         <Search className="h-8 w-8 text-muted-foreground/30" />
+                      </div>
+                      <p className="text-sm font-bold text-muted-foreground/60">No transactions found in this ledger.</p>
+                    </div>
                   </td>
                 </tr>
               )}
@@ -625,61 +727,98 @@ export default function Transactions() {
           </table>
         </div>
 
-        {/* Mobile List View */}
-        <div className="md:hidden divide-y w-full">
+        <div className="md:hidden divide-y divide-border/30 w-full bg-card/40 backdrop-blur-md">
           {isLoading ? (
             Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="px-2 py-3 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 flex-1">
-                  <div className="h-8 w-8 rounded-xl bg-muted animate-pulse shrink-0" />
+              <div key={i} className="px-4 py-5 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-4 flex-1">
+                  <div className="h-10 w-10 rounded-2xl bg-muted animate-pulse shrink-0" />
                   <div className="space-y-2 flex-1">
-                    <div className="h-3 w-24 bg-muted animate-pulse rounded" />
-                    <div className="h-2 w-16 bg-muted animate-pulse rounded" />
+                    <div className="h-4 w-28 bg-muted animate-pulse rounded" />
+                    <div className="h-3 w-20 bg-muted animate-pulse rounded" />
                   </div>
                 </div>
-                <div className="h-4 w-12 bg-muted animate-pulse rounded" />
+                <div className="h-5 w-14 bg-muted animate-pulse rounded" />
               </div>
             ))
           ) : filteredExpenses.length > 0 ? (
             filteredExpenses.map((expense, index) => {
               const category = categories.find(c => c.name === expense.category);
               const isIncome = expense.type === 'income';
+              const isExpanded = expandedRows.has(expense.id);
+              
               return (
-                <div key={`${expense.id}-${index}`} className="px-3 py-3.5 flex items-center justify-between active:bg-muted/50 transition-colors gap-3 cursor-pointer">
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <div 
-                      className="h-10 w-10 rounded-xl flex items-center justify-center text-white shadow-sm shrink-0"
-                      style={{ backgroundColor: category?.color || (isIncome ? '#10b981' : '#64748b') }}
-                    >
-                      {isIncome ? <TrendingUp className="h-5 w-5" /> : <span className="text-xs font-bold">{expense.category.charAt(0)}</span>}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="font-bold truncate text-sm leading-tight text-foreground">{expense.description}</p>
-                      <div className="flex items-center gap-2 text-[10px] text-muted-foreground mt-1 font-medium">
-                        <span className="truncate max-w-[60px]">{expense.category}</span>
-                        <span>•</span>
-                        <span className="shrink-0">{format(new Date(expense.date), 'MMM dd')}</span>
+                <div 
+                  key={`${expense.id}-${index}`} 
+                  className={cn(
+                    "px-4 py-5 flex flex-col transition-all",
+                    isExpanded ? "bg-muted/30" : "active:bg-muted/50"
+                  )}
+                  onClick={() => toggleRow(expense.id)}
+                >
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-4 min-w-0 flex-1">
+                      <div 
+                        className="h-11 w-11 rounded-2xl flex items-center justify-center text-white shadow-soft shrink-0 relative"
+                        style={{ backgroundColor: category?.color || (isIncome ? '#10b981' : '#64748b') }}
+                      >
+                        {isIncome ? <TrendingUp className="h-5 w-5" /> : <span className="text-sm font-black">{expense.category.charAt(0)}</span>}
+                        {expense.isActuallyEncrypted && (
+                          <div className="absolute -top-1.5 -right-1.5 bg-primary border-4 border-[#12141c] rounded-full p-1 shadow-lg">
+                            <VaultLock className="h-2.5 w-2.5 text-white" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className={cn(
+                          "font-black text-sm tracking-tight text-foreground break-all leading-tight mb-1 transition-all",
+                          isExpanded ? "" : "line-clamp-1"
+                        )}>
+                          {expense.description}
+                        </p>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-muted-foreground/60 font-black uppercase tracking-widest">
+                          <span className="px-1.5 py-0.5 bg-muted rounded-md border border-border/30 text-primary/70">{expense.category}</span>
+                          <span className="opacity-40">•</span>
+                          <span className="shrink-0">{format(new Date(expense.date), 'MMM dd, yyyy')}</span>
+                        </div>
                       </div>
                     </div>
+                    <div className="flex flex-col items-end gap-2 shrink-0">
+                      <span className={cn("font-black text-base tracking-tighter tabular-nums", isIncome ? "text-emerald-500" : "text-foreground")}>
+                        {isIncome ? '+' : '-'}{formatCurrency(expense.amount, settings.currency)}
+                      </span>
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(expense.id);
+                        }}
+                        disabled={deleteMutation.isPending}
+                        className="p-1.5 text-muted-foreground/40 hover:text-destructive active:bg-destructive/10 rounded-lg transition-colors disabled:opacity-50"
+                      >
+                        {deleteMutation.isPending && deleteMutation.variables === expense.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span className={cn("font-bold text-sm whitespace-nowrap", isIncome ? "text-emerald-500" : "text-foreground")}>
-                      {isIncome ? '+' : '-'}{formatCurrency(expense.amount, settings.currency)}
-                    </span>
-                    <button 
-                      onClick={() => handleDelete(expense.id)}
-                      disabled={deleteMutation.isPending}
-                      className="p-1 text-muted-foreground hover:text-destructive active:bg-destructive/10 rounded-lg transition-colors disabled:opacity-50"
-                    >
-                      {deleteMutation.isPending && deleteMutation.variables === expense.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                    </button>
-                  </div>
+                  {isExpanded && expense.description.length > 20 && (
+                     <div className="mt-4 pt-4 border-t border-border/30 flex justify-end">
+                        <button 
+                          className="text-[9px] font-black uppercase tracking-widest text-primary/60"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleRow(expense.id);
+                          }}
+                        >
+                          Hide Details
+                        </button>
+                     </div>
+                  )}
                 </div>
               );
             })
           ) : (
-            <div className="p-12 text-center text-muted-foreground">
-              No transactions found.
+            <div className="p-16 text-center">
+               <Search className="h-10 w-10 text-muted-foreground/20 mx-auto mb-4" />
+               <p className="text-sm font-bold text-muted-foreground/40">No transactions recorded.</p>
             </div>
           )}
         </div>
@@ -735,5 +874,6 @@ export default function Transactions() {
         onClose={() => setIsAddOpen(false)} 
       />
     </div>
+    </VaultGuard>
   );
 }

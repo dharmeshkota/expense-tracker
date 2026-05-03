@@ -13,6 +13,8 @@ import { format } from 'date-fns';
 import { cn, formatCurrency } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { encryptData, decryptData, isEncrypted } from '@/lib/encryption';
+import { VaultGuard } from '@/components/VaultGuard';
 
 const DEFAULT_GROUP_CATEGORIES = [
     { name: "Rent", icon: "Tag", color: "#ff4757" },
@@ -26,7 +28,7 @@ const DEFAULT_GROUP_CATEGORIES = [
 ];
 
 export default function Groups() {
-  const { user, categories, settings } = useStore();
+  const { user, categories, settings, vaultKey } = useStore();
   const queryClient = useQueryClient();
   
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
@@ -62,23 +64,47 @@ export default function Groups() {
   const [hasMore, setHasMore] = useState(false);
   const [activities, setActivities] = useState<any[]>([]);
 
-  const { isLoading: isActivityLoading } = useQuery({
-    queryKey: ['groupActivity', activeGroupId, page],
+  const { isLoading: isActivityLoading, isFetching } = useQuery({
+    queryKey: ['groupActivity', activeGroupId, page, vaultKey, settings.useVault],
     queryFn: async () => {
       if (!activeGroupId) return null;
       const res = await fetch(`/api/groups/${activeGroupId}/activity?page=${page}&limit=20`);
       if (!res.ok) throw new Error('Failed to fetch activity');
       const data = await res.json();
       
+      // Decrypt activities ONLY if vault is enabled
+      const decryptedActivities = data.activities.map((a: any) => {
+        const cleanDescription = a.description.replace(' (Split)', '');
+        if (vaultKey && isEncrypted(cleanDescription)) {
+          // Try personal vault key first
+          let decrypted = decryptData(cleanDescription, vaultKey as string);
+          
+          // Fallback to group key if personal key fails (for shared splits)
+          if (!decrypted && activeGroupId) {
+            decrypted = decryptData(cleanDescription, activeGroupId);
+          }
+
+          if (decrypted && typeof decrypted === 'object' && decrypted.isEncryptedViaVault) {
+            return {
+              ...a,
+              amount: decrypted.amount,
+              description: decrypted.description + (a.description.includes(' (Split)') ? ' (Split)' : ''),
+              isActuallyEncrypted: true
+            };
+          }
+        }
+        return a;
+      });
+
       if (page === 1) {
-        setActivities(data.activities);
+        setActivities(decryptedActivities);
       } else {
-        setActivities(prev => [...prev, ...data.activities]);
+        setActivities(prev => [...prev, ...decryptedActivities]);
       }
       setHasMore(data.pagination.currentPage < data.pagination.pages);
-      return data;
+      return { ...data, activities: decryptedActivities };
     },
-    enabled: !!activeGroupId
+    enabled: !!activeGroupId && (!settings.useVault || !!vaultKey)
   });
 
   const groupedActivity = useMemo(() => {
@@ -185,10 +211,30 @@ export default function Groups() {
         finalDate = new Date(`${data.date}T12:00:00`).toISOString();
       }
 
+      const payload = { ...data };
+      if (settings.useVault && vaultKey) {
+        const splitCount = data.memberIds.length || 1;
+        const totalAmount = parseFloat(data.amount);
+        const individualAmount = totalAmount / splitCount;
+        
+        const sensitiveData = {
+          amount: individualAmount, // Encrypt the individual share, not the total
+          description: data.description,
+          isEncryptedViaVault: true
+        };
+        // Use activeGroupId as the key for shared splits so all members can decrypt it
+        payload.description = encryptData(JSON.stringify(sensitiveData), activeGroupId as string);
+        payload.amount = 0; // Server sees nothing
+      }
+
       const res = await fetch(`/api/groups/${selectedGroup.id}/split`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...data, date: finalDate })
+        body: JSON.stringify({ 
+          ...payload, 
+          date: finalDate,
+          isEncrypted: !!(settings.useVault && vaultKey) 
+        })
       });
       if (!res.ok) throw new Error('Failed to split payment');
       return res.json();
@@ -204,6 +250,8 @@ export default function Groups() {
       setSelectedMembers([]);
       setPage(1);
       queryClient.invalidateQueries({ queryKey: ['groupActivity', activeGroupId] });
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
     },
     onError: (error) => {
       toast.error(error.message);
@@ -226,6 +274,8 @@ export default function Groups() {
       toast.success('Split deleted');
       setPage(1);
       queryClient.invalidateQueries({ queryKey: ['groupActivity', activeGroupId] });
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
     },
     onError: (error) => {
       toast.error(error.message);
@@ -299,7 +349,8 @@ export default function Groups() {
   }
 
   return (
-    <div className="md:px-6 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 w-full max-w-7xl mx-auto pb-10">
+    <VaultGuard>
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 w-full max-w-7xl mx-auto pb-10">
       {activeGroupId && activeGroup ? (
         <div className="space-y-6 animate-in slide-in-from-right-4 duration-300 w-full">
           {/* Group Detail Header */}
@@ -417,12 +468,12 @@ export default function Groups() {
                   </div>
                 </CardHeader>
                 <CardContent className="p-0">
-                  <ScrollArea ref={scrollRef} className="h-auto max-h-[1200px] md:max-h-[calc(100vh-280px)]">
+                  <ScrollArea ref={scrollRef} className="h-[600px]">
                     <div className="p-4 md:p-10 space-y-8 md:space-y-12 relative pb-20">
                       {/* Vertical Timeline Line */}
                       <div className="absolute left-[41px] md:left-[55px] top-12 bottom-20 w-[2px] bg-gradient-to-b from-primary/20 via-primary/5 to-transparent pointer-events-none" />
 
-                      {isActivityLoading && page === 1 ? (
+                      {(isActivityLoading || (isFetching && activities.length === 0 && !!activeGroupId)) ? (
                         Array.from({ length: 3 }).map((_, i) => (
                           <div key={i} className="flex gap-6 animate-pulse px-2">
                             <div className="h-12 w-12 rounded-2xl bg-muted shrink-0" />
@@ -438,6 +489,25 @@ export default function Groups() {
                           const displayUser = item.creator || item.user;
                           const isMe = item.creatorId ? item.creatorId === user?.id : item.user.id === user?.id;
                           
+                          // Decrypt data if vault is active and it's encrypted
+                          let displayDescription = item.description.replace(' (Split)', '');
+                          let displayAmount = item.amount;
+  
+                          if (vaultKey && isEncrypted(item.description)) {
+                            // Try personal vault key first
+                            let decrypted = decryptData(item.description, vaultKey as string);
+                            
+                            // If decryption failed, try group-shared key (derived from groupId)
+                            if (!decrypted && activeGroupId) {
+                                decrypted = decryptData(item.description, activeGroupId);
+                            }
+
+                            if (decrypted && typeof decrypted === 'object' && decrypted.isEncryptedViaVault) {
+                              displayDescription = decrypted.description;
+                              displayAmount = decrypted.amount;
+                            }
+                          }
+
                           return (
                             <div key={item.id} className="flex gap-5 md:gap-8 relative z-10 group/item px-1">
                               {/* Connector Dot */}
@@ -466,8 +536,8 @@ export default function Groups() {
                                 </div>
                                 
                                 <div className="bg-card border border-border/70 p-5 md:p-6 rounded-[2rem] rounded-tl-none shadow-sm group-hover/item:border-primary/30 transition-all group-hover/item:shadow-md relative">
-                                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-5">
-                                    <div className="min-w-0 flex-1 pr-2">
+                                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-5 relative">
+                                      <div className="min-w-0 flex-1 pr-2">
                                       <div className="flex items-center gap-2 mb-4">
                                         <div className="p-1.5 bg-primary/5 rounded-lg shrink-0 border border-primary/10">
                                           <Tag className="h-3.5 w-3.5 text-primary" />
@@ -475,7 +545,7 @@ export default function Groups() {
                                         <p className="text-[9px] text-muted-foreground font-black uppercase tracking-[0.25em] truncate">{item.category}</p>
                                       </div>
                                       <p className="text-base md:text-xl font-bold text-foreground leading-snug break-words mb-5 tracking-tight">
-                                        {item.description.replace(' (Split)', '')}
+                                        {displayDescription}
                                       </p>
                                       
                                       {isSplit && (
@@ -512,29 +582,38 @@ export default function Groups() {
                                       )}
                                     </div>
                                     
-                                    <div className="text-left sm:text-right shrink-0 flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-start gap-4 border-t sm:border-none pt-5 sm:pt-0 mt-2 sm:mt-0">
-                                      <div className="bg-primary/5 px-5 py-3 rounded-[1.5rem] border border-primary/20 shadow-inner min-w-[120px] sm:min-w-[150px] flex flex-col items-start sm:items-end">
-                                        <p className="text-2xl md:text-3xl font-black tracking-tighter text-primary whitespace-nowrap">
-                                          {formatCurrency(item.amount, settings.currency)}
+                                    <div className="text-left sm:text-right shrink-0 flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-start gap-3 border-t sm:border-none pt-4 sm:pt-0 mt-2 sm:mt-0">
+                                      <div className="bg-primary/5 px-4 py-2.5 rounded-[1.25rem] border border-primary/20 shadow-inner min-w-[110px] sm:min-w-[150px] flex flex-col items-start sm:items-end">
+                                        <p className="text-xl md:text-3xl font-black tracking-tighter text-primary whitespace-nowrap">
+                                          {formatCurrency(displayAmount, settings.currency)}
                                         </p>
-                                        <span className="text-[8px] font-black text-primary/40 uppercase tracking-[0.3em] block mt-1.5">
-                                          {isSplit ? 'Shared Total' : 'Personal'}
+                                        <span className="text-[7px] font-black text-primary/40 uppercase tracking-[0.2em] block mt-1">
+                                          {isSplit ? 'Split Total' : 'Personal'}
                                         </span>
                                       </div>
+                                      
+                                      {isSplit && (
+                                        <div className="flex flex-col items-start sm:items-end">
+                                          <span className="text-[8px] font-black text-muted-foreground/60 uppercase tracking-widest whitespace-nowrap">Your Share</span>
+                                          <span className="text-sm font-bold text-foreground">
+                                            {formatCurrency(activities.find(a => a.description === item.description && a.date === item.date && a.userId === user?.id)?.amount || 0, settings.currency)}
+                                          </span>
+                                        </div>
+                                      )}
 
                                       {isMe && (
                                         <Button 
                                             variant="ghost" 
                                             size="sm" 
-                                            className="h-10 rounded-xl text-muted-foreground/60 hover:text-destructive hover:bg-destructive/5 text-[9px] font-black uppercase tracking-widest gap-2 px-4"
+                                            className="h-9 rounded-xl text-muted-foreground/50 hover:text-destructive hover:bg-destructive/5 text-[8px] font-black uppercase tracking-widest gap-2 px-3 sm:px-4"
                                             onClick={() => {
                                                 if (confirm('Delete this split? It will be removed for everyone.')) {
                                                     deleteSplitMutation.mutate(item.id);
                                                 }
                                             }}
                                         >
-                                            <Trash2 className="h-4 w-4" />
-                                            Delete
+                                            <Trash2 className="h-3.5 w-3.5" />
+                                            <span className="hidden sm:inline">Delete</span>
                                         </Button>
                                       )}
                                     </div>
@@ -643,7 +722,7 @@ export default function Groups() {
                   <div>
                     <p className="text-[10px] font-black uppercase tracking-[0.3em] opacity-80 mb-2">Total Shared</p>
                     <p className="text-4xl font-black tracking-tighter tabular-nums drop-shadow-lg leading-none">
-                      {formatCurrency(activities.reduce((sum: number, a: any) => sum + a.amount, 0), settings.currency)}
+                      {formatCurrency(activities.filter((a: any) => a.userId === user?.id).reduce((sum: number, a: any) => sum + a.amount, 0), settings.currency)}
                     </p>
                   </div>
                   <Button 
@@ -1027,5 +1106,6 @@ export default function Groups() {
         </DialogContent>
       </Dialog>
     </div>
+    </VaultGuard>
   );
 }

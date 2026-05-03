@@ -13,9 +13,11 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { QuickAddExpense } from '@/components/dashboard/QuickAddExpense';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { decryptData, isEncrypted } from '@/lib/encryption';
+import { VaultGuard } from '@/components/VaultGuard';
 
 export default function Dashboard() {
-  const { settings, categories, setCategories, setBills } = useStore();
+  const { settings, categories, setCategories, setBills, vaultKey } = useStore();
   const [isAddOpen, setIsAddOpen] = useState(false);
   const queryClient = useQueryClient();
   
@@ -35,7 +37,7 @@ export default function Dashboard() {
 
   // Use TanStack Query for data fetching
   const { data: dashboardData, isLoading, isFetching } = useQuery({
-    queryKey: ['dashboard', timeframe],
+    queryKey: ['dashboard', timeframe, vaultKey, settings.useVault],
     queryFn: async () => {
       const [year, month] = timeframe.split('-');
       const [statsRes, expensesRes, billsRes, categoriesRes] = await Promise.all([
@@ -49,24 +51,80 @@ export default function Dashboard() {
         throw new Error('Failed to fetch dashboard data');
       }
 
-      const [stats, expensesData, bills, cats] = await Promise.all([
+      const [serverStats, expensesData, bills, cats] = await Promise.all([
         statsRes.json(),
         expensesRes.json(),
         billsRes.json(),
         categoriesRes.json()
       ]);
 
-      // Sync categories to store if needed
+      // Global sync
       setCategories(cats);
       setBills(bills);
 
+      // Decrypt expenses if vault key is present
+      const decryptedExpenses = expensesData.expenses.map((e: any) => {
+        if (vaultKey && isEncrypted(e.description)) {
+          const decrypted = decryptData(e.description, vaultKey as string);
+          if (decrypted && typeof decrypted === 'object' && decrypted.isEncryptedViaVault) {
+            return {
+              ...e,
+              amount: decrypted.amount,
+              description: decrypted.description,
+              isActuallyEncrypted: true
+            };
+          }
+        }
+        return e;
+      });
+
+      // If we have a vault key, we recalculate stats locally because server might have 0 amounts
+      let finalStats = serverStats;
+      if (vaultKey) {
+        const excludedCategoryNames = cats
+          .filter((c: any) => c.excludeFromBudget)
+          .map((c: any) => c.name);
+
+        const totalIncome = decryptedExpenses
+          .filter((e: any) => e.type === 'income')
+          .reduce((sum: number, e: any) => sum + e.amount, 0);
+
+        const totalSpent = decryptedExpenses
+          .filter((e: any) => e.type === 'expense')
+          .reduce((sum: number, e: any) => sum + e.amount, 0);
+
+        const budgetSpent = decryptedExpenses
+          .filter((e: any) => e.type === 'expense' && !excludedCategoryNames.includes(e.category))
+          .reduce((sum: number, e: any) => sum + e.amount, 0);
+
+        const categoryBreakdown: Record<string, number> = decryptedExpenses
+          .filter((e: any) => e.type === 'expense')
+          .reduce((acc: any, e: any) => {
+            acc[e.category] = (acc[e.category] || 0) + e.amount;
+            return acc;
+          }, {});
+
+        finalStats = {
+          ...serverStats,
+          totalIncome,
+          totalSpent,
+          budgetSpent,
+          remaining: (serverStats.totalSalary || 0) + totalIncome - totalSpent,
+          categoryBreakdown: Object.entries(categoryBreakdown).map(([name, value]) => ({ name, value })),
+          recentExpenses: [...decryptedExpenses].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 5),
+        };
+      } else {
+        // Just sort recent expenses if not in vault mode (legacy/mixed data)
+        finalStats.recentExpenses = decryptedExpenses.slice(0, 5);
+      }
+
       return {
-        stats,
-        expenses: expensesData.expenses,
+        stats: finalStats,
+        expenses: decryptedExpenses,
         bills
       };
     },
-    staleTime: 30000, // 30 seconds
+    staleTime: 30000,
   });
 
   const stats = dashboardData?.stats;
@@ -110,6 +168,7 @@ export default function Dashboard() {
   const budgetProgress = stats ? Math.min(100, (stats.budgetSpent / settings.monthlyBudget) * 100) : 0;
 
   return (
+    <VaultGuard>
     <div className="space-y-8 animate-in fade-in duration-500 relative">
       {isFetching && !isLoading && (
         <div className="absolute top-0 right-0 z-50 p-4">
@@ -441,5 +500,6 @@ export default function Dashboard() {
         onClose={() => setIsAddOpen(false)} 
       />
     </div>
+    </VaultGuard>
   );
 }

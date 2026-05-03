@@ -11,6 +11,7 @@ import { useStore } from '@/store/useStore';
 import { cn } from '@/lib/utils';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
+import { encryptData } from '@/lib/encryption';
 
 const expenseSchema = z.object({
   amount: z.string().refine((val) => !isNaN(parseFloat(val)) && parseFloat(val) > 0, {
@@ -31,7 +32,7 @@ interface QuickAddExpenseProps {
 }
 
 export function QuickAddExpense({ isOpen, onClose, onSuccess }: QuickAddExpenseProps) {
-  const { categories, addExpense, settings } = useStore();
+  const { categories, addExpense, settings, vaultKey } = useStore();
   const queryClient = useQueryClient();
 
   const { register, handleSubmit, formState: { errors }, reset, setValue, watch } = useForm<ExpenseFormValues>({
@@ -46,13 +47,32 @@ export function QuickAddExpense({ isOpen, onClose, onSuccess }: QuickAddExpenseP
 
   const addExpenseMutation = useMutation({
     mutationFn: async (data: ExpenseFormValues) => {
+      // If vault key is active, we encrypt the entire content into the description field
+      // and set a dummy amount in the DB (0) to ensure the owner sees nothing.
+      let payload: any = {
+        category: data.category,
+        date: new Date(data.date),
+        type: data.type,
+      };
+
+      if (settings.useVault && vaultKey) {
+        const sensitiveData = {
+          amount: parseFloat(data.amount),
+          description: data.description,
+          isEncryptedViaVault: true,
+        };
+        
+        payload.description = encryptData(JSON.stringify(sensitiveData), vaultKey);
+        payload.amount = 0; // The real amount is inside the encrypted description
+      } else {
+        payload.description = data.description;
+        payload.amount = parseFloat(data.amount);
+      }
+
       const res = await fetch('/api/expenses', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...data,
-          amount: parseFloat(data.amount)
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) throw new Error('Failed to add transaction');

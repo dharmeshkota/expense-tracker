@@ -5,8 +5,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
-import { Settings as SettingsIcon, Wallet, Palette, Trash2, LogOut, Globe, Moon, Sun, Smartphone, AlertTriangle, User } from 'lucide-react';
+import { Settings as SettingsIcon, Wallet, Palette, Trash2, LogOut, Globe, Moon, Sun, Smartphone, AlertTriangle, User, Shield, Lock, Unlock, ShieldCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { 
@@ -30,7 +31,7 @@ const currencies = [
 ];
 
 export default function Settings() {
-  const { user, settings, updateSettings, setExpenses, setBills } = useStore();
+  const { user, settings, updateSettings, setExpenses, setBills, vaultKey, setVaultKey } = useStore();
   const [salary, setSalary] = useState(settings.monthlySalary.toString());
   const [budget, setBudget] = useState(settings.monthlyBudget.toString());
   
@@ -182,6 +183,104 @@ export default function Settings() {
               <Save className="h-4 w-4" />
               Save Financials
             </Button>
+          </CardContent>
+        </Card>
+
+        {/* Privacy & Security */}
+        <Card className="border-none shadow-sm rounded-2xl overflow-hidden pb-0 bg-primary/5">
+          <CardHeader className="bg-primary/10 py-4">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-primary flex items-center justify-center">
+                <Shield className="h-5 w-5 text-primary-foreground" />
+              </div>
+              <div>
+                <CardTitle className="text-lg font-bold">Privacy & Security</CardTitle>
+                <CardDescription>Your data is protected with End-to-End Encryption.</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="p-6 space-y-6">
+            <div className="flex items-center justify-between p-4 rounded-2xl bg-background border border-primary/20 shadow-sm">
+              <div className="space-y-0.5">
+                <Label className="text-base font-bold">Enable Privacy Vault</Label>
+                <p className="text-xs text-muted-foreground">
+                  Secure your transactions with Zero-Knowledge encryption.
+                </p>
+              </div>
+              <Switch 
+                checked={settings.useVault} 
+                onCheckedChange={(val) => {
+                  updateSettings({ useVault: val }, true);
+                  if (val) {
+                    toast.info('Privacy Vault enabled. You will be prompted to set a master key.');
+                  } else {
+                    setVaultKey(null);
+                    toast.warning('Privacy Vault disabled. New transactions will be visible to the server.');
+                  }
+                }}
+              />
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex items-start gap-4">
+                <div className="mt-1 p-2 bg-background rounded-lg shadow-sm">
+                  <ShieldCheck className="h-5 w-5 text-emerald-500" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm">Client-Side Encryption Active</h4>
+                  <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                    Sensitive data (amounts and descriptions) are encrypted in your browser using AES-256 before being sent to the server. 
+                    The database owner cannot see your financial details.
+                  </p>
+                </div>
+              </div>
+              
+              <div className="p-4 rounded-xl bg-background/50 border border-border/50">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    {vaultKey ? <Lock className="h-4 w-4 text-primary" /> : <Unlock className="h-4 w-4 text-muted-foreground" />}
+                    <span className="text-sm font-bold">
+                      {vaultKey ? "Vault is currently Open" : "Vault is currently Locked"}
+                    </span>
+                  </div>
+                  {vaultKey && (
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={() => {
+                        setVaultKey(null);
+                        toast.success('Vault locked successfully');
+                      }}
+                      className="text-xs font-bold text-destructive hover:bg-destructive/10 rounded-lg"
+                    >
+                      Clear Key & Lock
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-red-500/5 border border-red-500/10 mb-2">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="font-bold text-sm text-red-200">Zero-Knowledge Architecture</h4>
+                    <p className="text-xs text-muted-foreground mt-1 leading-relaxed italic">
+                      Your Vault Key is the <span className="text-foreground font-semibold">only</span> way to unlock your private records. 
+                      Since it is never sent to our servers, we have <span className="text-foreground underline">absolute zero</span> ability to reset it.
+                      <span className="block mt-2 font-bold text-red-300">If you lose this key, all metadata and amounts recorded while the vault was active are permanently lost.</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="text-[10px] text-muted-foreground bg-muted/50 p-4 rounded-xl border border-dashed border-primary/20">
+                <p className="flex items-center gap-2 mb-2">
+                  <ShieldCheck className="h-3 w-3 text-primary" />
+                  <strong>Security Mechanism:</strong>
+                </p>
+                <p>When the Vault is active, your key becomes the primary encryption seed. Your real spending amounts are stored as "0" on our server, and descriptions are AES-256 scrambled. Decryption only happens in your local device memory.</p>
+              </div>
+            </div>
           </CardContent>
         </Card>
 

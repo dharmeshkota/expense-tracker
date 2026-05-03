@@ -39,6 +39,7 @@ export interface Settings {
   monthlyBudget: number;
   currency: string;
   theme: 'light' | 'dark' | 'system';
+  useVault: boolean;
 }
 
 interface AppState {
@@ -65,6 +66,10 @@ interface AppState {
   setDashboardStats: (stats: any) => void;
   insightStats: any;
   setInsightStats: (stats: any) => void;
+  vaultKey: string | null;
+  setVaultKey: (key: string | null) => void;
+  isVaultGuardOpen: boolean;
+  setIsVaultGuardOpen: (isOpen: boolean) => void;
 }
 
 const defaultCategories: Category[] = [
@@ -119,6 +124,7 @@ export const useStore = create<AppState>()(
         monthlyBudget: 3000,
         currency: 'USD',
         theme: 'system',
+        useVault: false,
       },
       updateSettings: (newSettings, syncWithServer = false) => {
         set((state) => ({
@@ -137,6 +143,10 @@ export const useStore = create<AppState>()(
       setDashboardStats: (stats) => set({ dashboardStats: stats }),
       insightStats: null,
       setInsightStats: (stats) => set({ insightStats: stats }),
+      vaultKey: null,
+      setVaultKey: (vaultKey) => set({ vaultKey }),
+      isVaultGuardOpen: false,
+      setIsVaultGuardOpen: (isVaultGuardOpen) => set({ isVaultGuardOpen }),
     }),
     {
       name: 'expense-flow-storage',
